@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "Jimrat",
+    "slug": "jozefbelusak",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./hamsterlogo.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.jimappka.gymmate"
+    },
+    "android": {
+      "package": "com.jimappka.gymmate",
+      "adaptiveIcon": {
+        "foregroundImage": "./hamsterlogo.png",
+        "backgroundColor": "#07070B"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "bundler": "metro"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d85c8ffb-0959-4c84-b99c-eb7d079bcf91"
+      }
+    },
+    "owner": "jozefbelusaks-team"
+  }
+}
