@@ -2,18 +2,21 @@ import { Image, Platform, Text, View } from 'react-native';
 
 import { hamsterLogo } from '../assets';
 import { Section, Stat } from '../components/ui';
-import { formatDateLabel, formatTime } from '../data/plans';
-import { countCompletedSets } from '../domain/workouts';
+import { WorkoutHistoryCallbacks, WorkoutHistoryPanel } from '../components/WorkoutHistoryPanel';
+import { exerciseDb } from '../data/exercises';
+import { formatTime } from '../data/plans';
+import { calculateWorkoutVolume } from '../domain/workouts';
 import { styles } from '../theme/styles';
-import { PlanDay, WorkoutLog } from '../types';
+import { Exercise, PlanDay, WorkoutLog } from '../types';
 
-type ProfileScreenProps = {
+type ProfileScreenProps = WorkoutHistoryCallbacks & {
   logs: WorkoutLog[];
   schedule: Record<string, PlanDay>;
+  exercises?: Exercise[];
 };
 
-export function ProfileScreen({ logs, schedule }: ProfileScreenProps) {
-  const totalVolume = logs.reduce((sum, log) => sum + log.volumeKg, 0);
+export function ProfileScreen({ logs, exercises = exerciseDb, onUpdateLog, onDeleteLog, onRepeatLog }: ProfileScreenProps) {
+  const totalVolume = logs.reduce((sum, log) => sum + calculateWorkoutVolume(log.entries), 0);
 
   return (
     <View style={styles.screen}>
@@ -53,32 +56,7 @@ export function ProfileScreen({ logs, schedule }: ProfileScreenProps) {
           <Text style={styles.compactText}>No saved workouts yet.</Text>
         </View>
       ) : null}
-      <View style={styles.libraryList}>
-        {logs.map((log) => {
-          const day = schedule[log.date];
-          const doneSets = countCompletedSets(log.entries);
-
-          return (
-            <View key={log.id} style={styles.historyLogCard}>
-              <View style={styles.rowBetween}>
-                <View style={styles.exerciseDetailTitle}>
-                  <Text style={styles.rowTitle}>{log.name || day?.label || 'Workout'}</Text>
-                  <Text style={styles.rowMuted}>{formatDateLabel(log.date)}</Text>
-                </View>
-                <Text style={styles.rowValue}>{formatTime(log.durationSeconds)}</Text>
-              </View>
-              <View style={styles.metaPillRow}>
-                <View style={styles.metaPill}>
-                  <Text style={styles.metaPillText}>{formatVolume(log.volumeKg)}</Text>
-                </View>
-                <View style={styles.metaPill}>
-                  <Text style={styles.metaPillText}>{doneSets} sets</Text>
-                </View>
-              </View>
-            </View>
-          );
-        })}
-      </View>
+      <WorkoutHistoryPanel logs={logs} exercises={exercises} onUpdateLog={onUpdateLog} onDeleteLog={onDeleteLog} onRepeatLog={onRepeatLog} />
     </View>
   );
 }

@@ -8,6 +8,8 @@ import {
   parseTrainingStorageEnvelope,
   serializeTrainingState,
   TrainingState,
+  hasCompleteTrainingRecords,
+  trainingStatesEqual,
 } from './trainingStorage';
 
 const plan: PlanDay = {
@@ -257,5 +259,40 @@ describe('training storage schema', () => {
       customExercises: [],
       templates: [],
     });
+  });
+});
+
+describe('complete storage and canonical snapshots', () => {
+  it('compares reordered object properties recursively without changing array ordering', () => {
+    const first = { logs: [{ id: 'log', entries: [{ notes: 'Seat 4', sets: [{ reps: 10, weightKg: 50 }] }] }], schedule: {} };
+    const reordered = { schedule: {}, logs: [{ entries: [{ sets: [{ weightKg: 50, reps: 10 }], notes: 'Seat 4' }], id: 'log' }] };
+    expect(trainingStatesEqual(first, reordered)).toBe(true);
+    expect(trainingStatesEqual({ ...state, activeWorkout: { ...activeWorkout, notes: undefined } }, state)).toBe(true);
+    expect(trainingStatesEqual({ templates: ['A', 'B'] }, { templates: ['B', 'A'] })).toBe(false);
+    expect(trainingStatesEqual(first, { ...reordered, logs: [{ ...reordered.logs[0], id: 'changed' }] })).toBe(false);
+  });
+  it('rejects a corrupted nested set without erasing the entire containing workout on load', () => {
+    const corrupt = { ...state, logs: [{ ...log, entries: [{ ...log.entries[0], sets: [{ ...log.entries[0].sets[0], reps: 'corrupt' }] }] }] };
+    expect(parseTrainingStorageEnvelope(JSON.stringify({ version: 6, savedAt: 1, data: corrupt }))).toBeNull();
+  });
+  it('rejects normalized loss of known notes or timing fields and invalid nested identities', () => {
+    const sources = [
+      { ...state, logs: [{ ...log, notes: 123 }] },
+      { ...state, logs: [{ ...log, entries: [{ ...log.entries[0], notes: 123 }] }] },
+      { ...state, activeWorkout: { ...activeWorkout, restPausedRemainingSeconds: 'lost' } },
+      { ...state, logs: [{ ...log, entries: [{ ...log.entries[0], sets: [{ ...log.entries[0].sets[0], workoutExerciseId: 'wrong-parent' }] }] }] },
+      { ...state, logs: [{ ...log, entries: [log.entries[0], log.entries[0]] }] },
+      { ...state, logs: [{ ...log, entries: [{ ...log.entries[0], sets: [log.entries[0].sets[0], log.entries[0].sets[0]] }] }] },
+    ];
+    for (const source of sources) expect(parseTrainingStorageEnvelope(JSON.stringify({ version: 6, savedAt: 1, data: source }))).toBeNull();
+    expect(hasCompleteTrainingRecords(state, state)).toBe(true);
+  });
+  it('preserves a completed workout after its final set is removed, plus an editable empty entry', () => {
+    const completed = { ...activeWorkout, phase: 'complete' as const, completedAt: 2000, setIndex: 1,
+      entries: [{ ...activeWorkout.entries[0], sets: [] }] };
+    expect(parseTrainingStorageEnvelope(serializeTrainingState({ ...state, activeWorkout: completed }, 3000))?.activeWorkout).toEqual(completed);
+    const emptyEntry = { ...completed, phase: 'set' as const, setIndex: 0, completedAt: undefined };
+    expect(parseTrainingStorageEnvelope(serializeTrainingState({ ...state, activeWorkout: emptyEntry }, 3000))?.activeWorkout).toEqual(emptyEntry);
+    expect(parseTrainingStorageEnvelope(serializeTrainingState({ ...state, activeWorkout: { ...emptyEntry, setIndex: 1 } }, 3000))).toBeNull();
   });
 });

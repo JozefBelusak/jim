@@ -6,6 +6,7 @@ import {
   MuscleGroup,
   WeightMode,
 } from '../types';
+import { getExerciseMetric } from '../domain/metrics';
 
 type ExerciseSeed = {
   id: string;
@@ -543,22 +544,22 @@ function normalizeSecondaryMuscles(seed: ExerciseSeed): MuscleGroup[] {
 }
 
 function normalizeEquipment(equipment: string): Equipment {
-  const primaryEquipment = equipment.split('/')[0].trim();
+  const primaryEquipment = equipment.split('/')[0].trim().toLowerCase();
   const equipmentMap: Record<string, Equipment> = {
-    Bar: 'pull_up_bar',
-    Barbell: 'barbell',
-    Bench: 'other',
-    Bodyweight: 'bodyweight',
-    Cable: 'cable',
-    Dumbbells: 'dumbbell',
-    'EZ bar': 'ez_bar',
-    Machine: 'machine',
-    Rack: 'barbell',
-    'Roman chair': 'other',
-    'Smith machine': 'smith_machine',
-    Treadmill: 'treadmill',
+    bar: 'pull_up_bar',
+    barbell: 'barbell',
+    bench: 'other',
+    bodyweight: 'bodyweight',
+    cable: 'cable',
+    dumbbell: 'dumbbell',
+    dumbbells: 'dumbbell',
+    'ez bar': 'ez_bar',
+    machine: 'machine',
+    rack: 'barbell',
+    'roman chair': 'other',
+    'smith machine': 'smith_machine',
+    treadmill: 'treadmill',
   };
-
   return equipmentMap[primaryEquipment] ?? 'other';
 }
 
@@ -609,15 +610,27 @@ function getWeightMode(seed: ExerciseSeed): WeightMode {
     : 'external';
 }
 
+
+const equipmentOverrides: Partial<Record<ExerciseSeedId, { equipment: Equipment; alternatives: Equipment[] }>> = {
+  'chest-supported-row': { equipment: 'machine', alternatives: ['dumbbell'] },
+  'preacher-curl': { equipment: 'ez_bar', alternatives: ['machine', 'dumbbell'] },
+  'bulgarian-split-squat': { equipment: 'dumbbell', alternatives: ['bodyweight'] },
+};
+
+function normalizeEquipmentAlternatives(raw: string): Equipment[] {
+  return raw.split('/').slice(1).map((item) => normalizeEquipment(item)).filter((equipment) => equipment !== 'other');
+}
+
 export const exerciseDb: Exercise[] = exerciseSeeds.map((seed) => {
   const primaryMuscle = normalizePrimaryMuscle(seed);
 
-  return {
+  const exercise: Exercise = {
     id: seed.id,
     name: seed.name,
     primaryMuscle,
     secondaryMuscles: normalizeSecondaryMuscles(seed),
-    equipment: normalizeEquipment(seed.equipment),
+    equipment: equipmentOverrides[seed.id]?.equipment ?? normalizeEquipment(seed.equipment),
+    equipmentAlternatives: equipmentOverrides[seed.id]?.alternatives ?? normalizeEquipmentAlternatives(seed.equipment),
     category: getCategory(seed),
     movementType: getMovementType(seed, primaryMuscle),
     weightMode: getWeightMode(seed),
@@ -625,4 +638,5 @@ export const exerciseDb: Exercise[] = exerciseSeeds.map((seed) => {
     technicalInstructions: seed.technical,
     isCustom: false,
   };
+  return { ...exercise, metric: getExerciseMetric(exercise) };
 });

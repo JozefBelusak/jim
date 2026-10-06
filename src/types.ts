@@ -49,6 +49,16 @@ export type MovementType =
   | 'isometric'
   | 'cardio';
 export type WeightMode = 'external' | 'bodyweight' | 'bodyweight_plus';
+export type ExerciseMetric = 'weight_reps' | 'reps' | 'duration' | 'distance_duration' | 'assisted_reps';
+
+export type MachineMemory = {
+  id: string;
+  exerciseId: string;
+  gymName: string;
+  machineName: string;
+  settings: string;
+  lastUsedAt: number;
+};
 
 export type Exercise = {
   id: string;
@@ -59,6 +69,8 @@ export type Exercise = {
   category: ExerciseCategory;
   movementType: MovementType;
   weightMode: WeightMode;
+  metric?: ExerciseMetric;
+  equipmentAlternatives?: Equipment[];
   instructions?: string;
   technicalInstructions?: string;
   imageUrl?: string;
@@ -73,6 +85,10 @@ export type PlanExercise = {
   reps: number;
   weightKg: number;
   restSeconds: number;
+  repRangeMin?: number;
+  repRangeMax?: number;
+  targetRir?: number;
+  notes?: string;
 };
 
 export type PlanDay = {
@@ -104,6 +120,7 @@ export type WorkoutTemplate = {
   exercises: TemplateExercise[];
   createdAt: number;
   updatedAt: number;
+  archived?: boolean;
 };
 
 export type WorkoutSet = {
@@ -117,6 +134,13 @@ export type WorkoutSet = {
   note?: string;
   createdAt: number;
   completedAt?: number;
+  repRangeMin?: number;
+  repRangeMax?: number;
+  targetRir?: number;
+  rir?: number;
+  rpe?: number;
+  durationSeconds?: number;
+  distanceKm?: number;
 };
 
 export type WorkoutExerciseState = {
@@ -125,6 +149,9 @@ export type WorkoutExerciseState = {
   restSeconds?: number;
   notes?: string;
   supersetGroupId?: string;
+  metric?: ExerciseMetric;
+  skipped?: boolean;
+  machineMemoryId?: string;
   sets: WorkoutSet[];
 };
 
@@ -143,6 +170,12 @@ export type ActiveWorkout = {
   restStartedAt?: number;
   restEndsAt?: number;
   restPausedRemainingSeconds?: number;
+  completedAt?: number;
+  pausedAt?: number;
+  pausedDurationMs?: number;
+  restNextExerciseId?: string;
+  restNextSetId?: string;
+  deadlineAt?: number;
   entries: WorkoutExerciseState[];
 };
 
@@ -166,7 +199,11 @@ export type PersonalRecordType =
   | 'reps_at_weight'
   | 'estimated_1rm'
   | 'set_volume'
-  | 'exercise_session_volume';
+  | 'exercise_session_volume'
+  | 'most_reps'
+  | 'longest_duration'
+  | 'longest_distance'
+  | 'least_assistance';
 
 export type PersonalRecord = {
   type: PersonalRecordType;
@@ -188,6 +225,11 @@ export type ExerciseProgressPoint = {
   estimated1RmKg: number;
   volumeKg: number;
   workingSets: WorkoutSet[];
+  metric?: ExerciseMetric;
+  bestReps?: number;
+  longestDurationSeconds?: number;
+  longestDistanceKm?: number;
+  minAssistanceKg?: number;
 };
 
 export type ExerciseProgress = {
@@ -197,6 +239,11 @@ export type ExerciseProgress = {
   bestEstimated1RmKg: number;
   bestSessionVolumeKg: number;
   sessionsPerWeek: number;
+  metric?: ExerciseMetric;
+  bestReps?: number;
+  longestDurationSeconds?: number;
+  longestDistanceKm?: number;
+  minAssistanceKg?: number;
 };
 
 export type CalendarDay = {

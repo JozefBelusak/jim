@@ -47,3 +47,15 @@ describe('built-in exercise catalog', () => {
     });
   });
 });
+
+describe('exercise metrics and equipment alternatives', () => {
+  it('uses time for plank, distance and time for cardio, and assistance for assisted pull-ups', () => {
+    expect(exerciseDb.find((exercise) => exercise.id === 'plank')?.metric).toBe('duration');
+    expect(exerciseDb.find((exercise) => exercise.id === 'treadmill-walk')?.metric).toBe('distance_duration');
+    expect(exerciseDb.find((exercise) => exercise.id === 'assisted-pull-up')?.metric).toBe('assisted_reps');
+    expect(exerciseDb.find((exercise) => exercise.id === 'crunch')?.metric).toBe('reps');
+    expect(exerciseDb.find((exercise) => exercise.id === 'chest-fly')?.equipmentAlternatives).toEqual(['cable']);
+    expect(exerciseDb.find((exercise) => exercise.id === 'shoulder-press')?.equipmentAlternatives).toEqual(['dumbbell']);
+    expect(exerciseDb.find((exercise) => exercise.id === 'bulgarian-split-squat')?.equipment).toBe('dumbbell');
+  });
+});

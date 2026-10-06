@@ -1,7 +1,11 @@
 import { CalendarDay, Exercise, PlanExercise, TabKey, WorkoutLog, WorkoutSet } from '../types';
 import { exerciseDb } from './exercises';
 
-export const todayIso = toLocalIsoDate(new Date());
+export function getTodayIso(now: Date = new Date()) {
+  return toLocalIsoDate(now);
+}
+
+export const todayIso = getTodayIso();
 export const calendarWeekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const calendarMonths = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
@@ -46,10 +50,15 @@ export function createSets(
     workoutExerciseId: options.workoutExerciseId,
     type: options.previousSets?.[index]?.type ?? 'normal',
     targetReps: item.reps,
+    repRangeMin: item.repRangeMin,
+    repRangeMax: item.repRangeMax,
+    targetRir: item.targetRir,
+    durationSeconds: options.previousSets?.[index]?.durationSeconds,
+    distanceKm: options.previousSets?.[index]?.distanceKm,
     reps: options.previousSets?.[index]?.reps ?? item.reps,
     weightKg: options.previousSets?.[index]?.weightKg ?? item.weightKg,
     done: false,
-    note: '',
+    note: item.notes ?? '',
     createdAt: options.createdAt,
   }));
 }
@@ -74,8 +83,9 @@ export function startOfWeek(iso: string) {
 export function buildWeekDays(
   logs: WorkoutLog[],
   weekOffset: number,
+  today: string = getTodayIso(),
 ): CalendarDay[] {
-  const weekStart = addDays(startOfWeek(todayIso), weekOffset * 7);
+  const weekStart = addDays(startOfWeek(today), weekOffset * 7);
 
   return Array.from({ length: 7 }, (_, index) => {
     const iso = addDays(weekStart, index);

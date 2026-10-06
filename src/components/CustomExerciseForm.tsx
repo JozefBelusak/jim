@@ -4,12 +4,16 @@ import { Pressable, Text, TextInput, View } from 'react-native';
 import {
   CustomExerciseInput,
   equipmentOptions,
+  exerciseMetricOptions,
+  formatExerciseMetric,
   formatEquipment,
   formatMuscleGroup,
   muscleGroupOptions,
+  normalizeExerciseMediaUrl,
 } from '../domain/exercises';
+import { getExerciseMetric } from '../domain/metrics';
 import { styles } from '../theme/styles';
-import { Equipment, Exercise, MovementType, MuscleGroup, WeightMode } from '../types';
+import { Equipment, Exercise, ExerciseMetric, MovementType, MuscleGroup, WeightMode } from '../types';
 
 const weightModeOptions: readonly WeightMode[] = ['external', 'bodyweight', 'bodyweight_plus'];
 
@@ -24,6 +28,10 @@ export function CustomExerciseForm({ exercise, onSave, onCancel }: CustomExercis
   const [primaryMuscle, setPrimaryMuscle] = useState<MuscleGroup>(exercise?.primaryMuscle ?? 'chest');
   const [equipment, setEquipment] = useState<Equipment>(exercise?.equipment ?? 'machine');
   const [weightMode, setWeightMode] = useState<WeightMode>(exercise?.weightMode ?? 'external');
+  const [metric, setMetric] = useState<ExerciseMetric>(exercise ? getExerciseMetric(exercise) : 'weight_reps');
+  const [imageUrl, setImageUrl] = useState(exercise?.imageUrl ?? '');
+  const [videoUrl, setVideoUrl] = useState(exercise?.videoUrl ?? '');
+  const [error, setError] = useState<string | null>(null);
   const [instructions, setInstructions] = useState(exercise?.instructions ?? '');
   const [technicalInstructions, setTechnicalInstructions] = useState(exercise?.technicalInstructions ?? '');
 
@@ -45,6 +53,14 @@ export function CustomExerciseForm({ exercise, onSave, onCancel }: CustomExercis
       return;
     }
 
+    setError(null);
+    try {
+      normalizeExerciseMediaUrl(imageUrl);
+      normalizeExerciseMediaUrl(videoUrl);
+    } catch (cause: unknown) {
+      setError(cause instanceof Error ? cause.message : 'Invalid media URL.');
+      return;
+    }
     onSave({
       name,
       primaryMuscle,
@@ -55,8 +71,10 @@ export function CustomExerciseForm({ exercise, onSave, onCancel }: CustomExercis
       weightMode,
       instructions,
       technicalInstructions,
-      imageUrl: exercise?.imageUrl,
-      videoUrl: exercise?.videoUrl,
+      metric,
+      equipmentAlternatives: exercise?.equipmentAlternatives,
+      imageUrl,
+      videoUrl,
     });
   }
 
@@ -111,6 +129,16 @@ export function CustomExerciseForm({ exercise, onSave, onCancel }: CustomExercis
         ))}
       </View>
 
+      <Text style={styles.compactText}>What to record</Text>
+      <View style={styles.chipRow}>
+        {exerciseMetricOptions.map((item) => (
+          <Pressable key={item} style={[styles.chip, metric === item ? styles.chipActive : null]} onPress={() => setMetric(item)}>
+            <Text style={styles.chipText}>{formatExerciseMetric(item)}</Text>
+          </Pressable>
+        ))}
+      </View>
+      {metric === 'assisted_reps' ? <Text style={styles.rowMuted}>Enter assistance in kg. Less assistance at the same reps means a stronger performance.</Text> : null}
+
       <TextInput
         value={instructions}
         onChangeText={setInstructions}
@@ -127,6 +155,11 @@ export function CustomExerciseForm({ exercise, onSave, onCancel }: CustomExercis
         style={styles.noteInput}
         multiline
       />
+
+      <Text style={styles.compactText}>Technique media</Text>
+      <TextInput value={imageUrl} onChangeText={setImageUrl} placeholder="Image URL (optional)" placeholderTextColor="#71717A" style={styles.textInput} autoCapitalize="none" autoCorrect={false} keyboardType="url" />
+      <TextInput value={videoUrl} onChangeText={setVideoUrl} placeholder="Video URL (optional)" placeholderTextColor="#71717A" style={styles.textInput} autoCapitalize="none" autoCorrect={false} keyboardType="url" />
+      {error ? <Text accessibilityRole="alert" style={styles.dangerOutlineText}>{error}</Text> : null}
 
       <Pressable
         disabled={!name.trim()}

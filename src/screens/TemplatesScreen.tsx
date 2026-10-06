@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Pressable, Text, TextInput, View } from 'react-native';
 
 import { Stepper } from '../components/ui';
-import { filterExercises, formatMuscleGroup } from '../domain/exercises';
+import { ExerciseSearch } from '../components/ExerciseSearch';
+import { formatMuscleGroup } from '../domain/exercises';
+import { getExerciseMetric } from '../domain/metrics';
 import { styles } from '../theme/styles';
 import { Exercise, TemplateExercise, WorkoutTemplate } from '../types';
 
@@ -21,6 +23,10 @@ type TemplatesScreenProps = {
   onRemoveExercise: (templateId: string, templateExerciseId: string) => void;
   onMoveExercise: (templateId: string, templateExerciseId: string, direction: -1 | 1) => void;
   onStart: (template: WorkoutTemplate) => void;
+  onArchive: (templateId: string, archived: boolean) => void;
+  onDelete: (templateId: string) => void;
+  onAddStarters: () => void;
+  onMoveTemplate?: (templateId: string, direction: -1 | 1) => void;
 };
 
 export function TemplatesScreen({
@@ -34,7 +40,14 @@ export function TemplatesScreen({
   onRemoveExercise,
   onMoveExercise,
   onStart,
+  onArchive,
+  onDelete,
+  onAddStarters,
+  onMoveTemplate,
 }: TemplatesScreenProps) {
+  const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const visibleTemplates = templates.filter((template) => Boolean(template.archived) === showArchived);
   const [editingTemplateId, setEditingTemplateId] = useState<string | null>(null);
   const editingTemplate =
     templates.find((template) => template.id === editingTemplateId) ?? null;
@@ -55,15 +68,21 @@ export function TemplatesScreen({
         <Text style={styles.primaryText}>CREATE TEMPLATE</Text>
       </Pressable>
 
-      {templates.length === 0 ? (
+      <View style={styles.chipRow}>
+        <Pressable style={[styles.chip, !showArchived ? styles.chipActive : null]} onPress={() => setShowArchived(false)}><Text style={styles.chipText}>Active ({templates.filter((template) => !template.archived).length})</Text></Pressable>
+        <Pressable style={[styles.chip, showArchived ? styles.chipActive : null]} onPress={() => setShowArchived(true)}><Text style={styles.chipText}>Archived ({templates.filter((template) => template.archived).length})</Text></Pressable>
+      </View>
+      <Pressable style={styles.secondaryFull} onPress={onAddStarters}><Text style={styles.secondaryText}>Add starter plans</Text></Pressable>
+
+      {visibleTemplates.length === 0 ? (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>No workout templates yet</Text>
+          <Text style={styles.cardTitle}>{showArchived ? 'No archived plans' : 'No workout templates yet'}</Text>
           <Text style={styles.compactText}>Create a reusable workout such as Push, Pull, or Legs.</Text>
         </View>
       ) : null}
 
       <View style={styles.libraryList}>
-        {templates.map((template) => (
+        {visibleTemplates.map((template, index) => (
           <View key={template.id} style={styles.planQuickCard}>
             <View style={styles.rowBetween}>
               <View style={styles.exerciseBody}>
@@ -72,7 +91,7 @@ export function TemplatesScreen({
                   {template.exercises.length} exercises · {countTargetSets(template)} target sets
                 </Text>
               </View>
-              <Text style={styles.rowValue}>Ready</Text>
+              <Text style={styles.rowValue}>{template.archived ? 'Archived' : 'Ready'}</Text>
             </View>
             <View style={styles.planQuickActions}>
               <Pressable
@@ -92,6 +111,23 @@ export function TemplatesScreen({
                 <Text style={styles.primaryText}>Start</Text>
               </Pressable>
             </View>
+            <View style={[styles.chipRow, { marginTop: 10 }]}>
+              <Pressable style={styles.smallButton} onPress={() => onArchive(template.id, !template.archived)}><Text style={styles.smallButtonText}>{template.archived ? 'Restore' : 'Archive'}</Text></Pressable>
+              <Pressable style={styles.smallButton} onPress={() => setDeleteTemplateId(template.id)}><Text style={styles.dangerOutlineText}>Delete</Text></Pressable>
+              {!showArchived && onMoveTemplate ? (
+                <>
+                  <Pressable disabled={index === 0} style={[styles.smallButton, index === 0 ? styles.disabledButton : null]} onPress={() => onMoveTemplate(template.id, -1)}><Text style={styles.smallButtonText}>↑ Rotation</Text></Pressable>
+                  <Pressable disabled={index === visibleTemplates.length - 1} style={[styles.smallButton, index === visibleTemplates.length - 1 ? styles.disabledButton : null]} onPress={() => onMoveTemplate(template.id, 1)}><Text style={styles.smallButtonText}>↓ Rotation</Text></Pressable>
+                </>
+              ) : null}
+            </View>
+            {deleteTemplateId === template.id ? (
+              <View style={styles.descriptionBox}>
+                <Text style={styles.descriptionText}>Delete “{template.name}”? Your completed workout history will stay available.</Text>
+                <Pressable style={styles.dangerOutlineFull} onPress={() => { onDelete(template.id); setDeleteTemplateId(null); if (editingTemplateId === template.id) setEditingTemplateId(null); }}><Text style={styles.dangerOutlineText}>Confirm delete</Text></Pressable>
+                <Pressable style={styles.secondaryFull} onPress={() => setDeleteTemplateId(null)}><Text style={styles.secondaryText}>Keep plan</Text></Pressable>
+              </View>
+            ) : null}
           </View>
         ))}
       </View>
@@ -161,10 +197,6 @@ function TemplateEditor({
 }) {
   const [name, setName] = useState(template.name);
   const [description, setDescription] = useState(template.description ?? '');
-  const [query, setQuery] = useState('');
-  const availableExercises = filterExercises(exercises, { query }).filter(
-    (exercise) => !template.exercises.some((item) => item.exerciseId === exercise.id),
-  );
 
   return (
     <View style={styles.screen}>
@@ -209,12 +241,15 @@ function TemplateEditor({
         </View>
       </View>
 
+      <ExerciseSearch title="Add exercise" exercises={exercises} onSelect={onAddExercise} actionLabel="Add" maxVisible={5} />
+
       {template.exercises.map((item, index) => {
         const exercise = exercises.find((candidate) => candidate.id === item.exerciseId);
         if (!exercise) {
           return null;
         }
 
+        const rangeUnit = getExerciseMetric(exercise) === 'duration' || getExerciseMetric(exercise) === 'distance_duration' ? 'sec' : 'reps';
         return (
           <View key={item.id} style={styles.exerciseBlock}>
             <View style={styles.exerciseRow}>
@@ -235,13 +270,13 @@ function TemplateEditor({
                   onPlus={() => onUpdateExercise(item.id, { targetSets: (item.targetSets ?? 3) + 1 })}
                 />
                 <Stepper
-                  label="Min reps"
+                  label={`Min ${rangeUnit}`}
                   value={`${item.repRangeMin ?? 8}`}
                   onMinus={() => onUpdateExercise(item.id, { repRangeMin: Math.max(1, (item.repRangeMin ?? 8) - 1) })}
                   onPlus={() => onUpdateExercise(item.id, { repRangeMin: (item.repRangeMin ?? 8) + 1 })}
                 />
                 <Stepper
-                  label="Max reps"
+                  label={`Max ${rangeUnit}`}
                   value={`${item.repRangeMax ?? 12}`}
                   onMinus={() => onUpdateExercise(item.id, { repRangeMax: Math.max(1, (item.repRangeMax ?? 12) - 1) })}
                   onPlus={() => onUpdateExercise(item.id, { repRangeMax: (item.repRangeMax ?? 12) + 1 })}
@@ -254,7 +289,9 @@ function TemplateEditor({
                   onMinus={() => onUpdateExercise(item.id, { restSeconds: Math.max(0, (item.restSeconds ?? 90) - 30) })}
                   onPlus={() => onUpdateExercise(item.id, { restSeconds: (item.restSeconds ?? 90) + 30 })}
                 />
+                <Stepper label="Target RIR" value={item.targetRir === undefined ? 'Off' : `${item.targetRir}`} onMinus={() => onUpdateExercise(item.id, { targetRir: item.targetRir === undefined ? 2 : item.targetRir === 0 ? undefined : item.targetRir - 1 })} onPlus={() => onUpdateExercise(item.id, { targetRir: Math.min(10, (item.targetRir ?? 1) + 1) })} />
               </View>
+              <TextInput value={item.notes ?? ''} onChangeText={(notes) => onUpdateExercise(item.id, { notes })} placeholder="Exercise notes, setup or technique cues" placeholderTextColor="#71717A" style={styles.compactNoteInput} multiline />
               <View style={styles.editorActions}>
                 <Pressable
                   disabled={index === 0}
@@ -282,28 +319,6 @@ function TemplateEditor({
         );
       })}
 
-      <Text style={styles.sectionTitle}>Add exercise</Text>
-      <TextInput
-        value={query}
-        onChangeText={setQuery}
-        placeholder="Search exercises"
-        placeholderTextColor="#71717A"
-        style={styles.textInput}
-        autoCapitalize="none"
-        autoCorrect={false}
-      />
-      <View style={styles.libraryList}>
-        {availableExercises.map((exercise) => (
-          <Pressable
-            key={exercise.id}
-            style={styles.libraryRow}
-            onPress={() => onAddExercise(exercise.id)}
-          >
-            <Text style={styles.rowTitle}>{exercise.name}</Text>
-            <Text style={styles.rowValue}>{formatMuscleGroup(exercise.primaryMuscle)}</Text>
-          </Pressable>
-        ))}
-      </View>
     </View>
   );
 }

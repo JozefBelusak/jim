@@ -1,11 +1,11 @@
-import { PlanDay, TemplateExercise, WorkoutLog, WorkoutTemplate } from '../types';
+import { ExerciseMetric, PlanDay, TemplateExercise, WorkoutLog, WorkoutTemplate } from '../types';
 
 export function getNextWorkoutTemplate(
   templates: WorkoutTemplate[],
   logs: WorkoutLog[],
   userId: string,
 ) {
-  const userTemplates = templates.filter((template) => template.userId === userId);
+  const userTemplates = templates.filter((template) => template.userId === userId && !template.archived);
   if (userTemplates.length === 0) {
     return null;
   }
@@ -67,19 +67,23 @@ export function addExerciseToTemplate(
   exerciseId: string,
   templateExerciseId: string,
   updatedAt: number,
+  metric: ExerciseMetric = 'weight_reps',
 ): WorkoutTemplate {
-  if (template.exercises.some((item) => item.exerciseId === exerciseId)) {
-    return template;
+  if (!exerciseId.trim() || !templateExerciseId.trim()) {
+    throw new Error('Exercise identity is required.');
+  }
+  if (template.exercises.some((item) => item.id === templateExerciseId)) {
+    throw new Error('Template exercise IDs must be unique.');
   }
 
   const exercise: TemplateExercise = {
     id: templateExerciseId,
     exerciseId,
     order: template.exercises.length,
-    targetSets: 3,
-    repRangeMin: 8,
-    repRangeMax: 12,
-    restSeconds: 90,
+    targetSets: metric === 'distance_duration' ? 1 : metric === 'duration' ? 2 : 3,
+    repRangeMin: metric === 'distance_duration' ? 600 : metric === 'duration' ? 20 : 8,
+    repRangeMax: metric === 'distance_duration' ? 600 : metric === 'duration' ? 40 : 12,
+    restSeconds: metric === 'distance_duration' ? 0 : 90,
   };
 
   return {
@@ -98,7 +102,7 @@ export function updateTemplateExercise(
   return {
     ...template,
     exercises: template.exercises.map((item) =>
-      item.id === templateExerciseId ? { ...item, ...patch } : item,
+      item.id === templateExerciseId ? normalizeTemplateExercise(item, patch) : item,
     ),
     updatedAt,
   };
@@ -157,6 +161,7 @@ export function duplicateWorkoutTemplate(
     id: identity.id,
     userId: identity.userId,
     name: `${template.name} Copy`,
+    archived: false,
     exercises: template.exercises.map((item, order) => ({
       ...item,
       id: identity.templateExerciseIds[order],
@@ -181,6 +186,10 @@ export function templateToPlanDay(template: WorkoutTemplate, date: string): Plan
         reps: item.repRangeMax ?? item.repRangeMin ?? 10,
         weightKg: 0,
         restSeconds: item.restSeconds ?? 90,
+        repRangeMin: item.repRangeMin,
+        repRangeMax: item.repRangeMax,
+        targetRir: item.targetRir,
+        notes: item.notes,
       })),
   };
 }
@@ -188,4 +197,57 @@ export function templateToPlanDay(template: WorkoutTemplate, date: string): Plan
 function normalizeOptionalText(value: string | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
+}
+
+export function setTemplateArchived(
+  template: WorkoutTemplate,
+  archived: boolean,
+  updatedAt: number,
+): WorkoutTemplate {
+  return { ...template, archived, updatedAt };
+}
+
+export function moveTemplate(
+  templates: WorkoutTemplate[],
+  templateId: string,
+  direction: -1 | 1,
+): WorkoutTemplate[] {
+  const index = templates.findIndex((template) => template.id === templateId);
+  if (index < 0) return templates;
+  const visibleIndices = templates.flatMap((template, position) => Boolean(template.archived) === Boolean(templates[index].archived) ? [position] : []);
+  const visibleIndex = visibleIndices.indexOf(index);
+  const adjacentIndex = visibleIndices[visibleIndex + direction];
+  if (adjacentIndex === undefined) return templates;
+  const result = [...templates];
+  [result[index], result[adjacentIndex]] = [result[adjacentIndex], result[index]];
+  return result;
+}
+
+function normalizeTemplateExercise(
+  item: TemplateExercise,
+  patch: Partial<Omit<TemplateExercise, 'id' | 'exerciseId' | 'order'>>,
+): TemplateExercise {
+  const result = { ...item, ...patch };
+  for (const key of ['targetSets', 'repRangeMin', 'repRangeMax', 'restSeconds', 'targetRir'] as const) {
+    const value = result[key];
+    const minimum = key === 'restSeconds' || key === 'targetRir' ? 0 : 1;
+    if (value !== undefined && (!Number.isFinite(value) || value < minimum || !Number.isInteger(value))) {
+      throw new Error(`Invalid ${key}.`);
+    }
+  }
+  if (result.targetRir !== undefined && result.targetRir > 10) {
+    throw new Error('Target RIR must be between 0 and 10.');
+  }
+  if (result.repRangeMin !== undefined && result.repRangeMax !== undefined && result.repRangeMin > result.repRangeMax) {
+    if (patch.repRangeMin !== undefined && patch.repRangeMax !== undefined) {
+      throw new Error('Minimum reps cannot exceed maximum reps.');
+    }
+    if (patch.repRangeMin !== undefined) {
+      result.repRangeMax = result.repRangeMin;
+    } else {
+      result.repRangeMin = result.repRangeMax;
+    }
+  }
+  result.notes = normalizeOptionalText(result.notes);
+  return result;
 }

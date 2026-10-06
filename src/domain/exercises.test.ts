@@ -112,3 +112,22 @@ describe('custom exercises', () => {
     );
   });
 });
+
+describe('exercise search and media validation', () => {
+  it('finds equipment alternatives, secondary search terms and accent-insensitive names', () => {
+    const exercise: Exercise = { ...exercises[0], name: 'Tlaky na hrúdnik', equipmentAlternatives: ['dumbbell'] };
+    expect(filterExercises([exercise], { query: 'hrudnik', equipment: 'dumbbell' })).toEqual([exercise]);
+    expect(filterExercises([exercise], { query: 'chest dumbbell' })).toEqual([exercise]);
+    expect(getEquipmentFilters([exercise])).toEqual(['all', 'machine', 'dumbbell']);
+  });
+
+  it('stores custom metric and accepts only safe media links', () => {
+    const input = {
+      name: 'Timed hold', primaryMuscle: 'abs' as const, equipment: 'bodyweight' as const,
+      category: 'core' as const, movementType: 'isometric' as const, weightMode: 'bodyweight' as const,
+      metric: 'duration' as const, videoUrl: ' https://example.com/technique ',
+    };
+    expect(createCustomExercise(input, { id: 'hold', userId: 'user' })).toMatchObject({ metric: 'duration', videoUrl: 'https://example.com/technique' });
+    expect(() => createCustomExercise({ ...input, videoUrl: 'javascript:alert(1)' }, { id: 'hold', userId: 'user' })).toThrow('Media URLs');
+  });
+});

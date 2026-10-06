@@ -1,689 +1,262 @@
 import { StatusBar } from 'expo-status-bar';
-import { useEffect, useMemo, useState } from 'react';
-import {
-  Image,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Image, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
 import { hamsterLogo } from './src/assets';
+import { ConfirmationDialog } from './src/components/ConfirmationDialog';
+import { registerOfflineSupport } from './src/web/offline';
+import { BackupPanel } from './src/components/BackupPanel';
+import { MachineMemoryPanel } from './src/components/MachineMemoryPanel';
 import { BackgroundLines } from './src/components/ui';
 import { exerciseDb } from './src/data/exercises';
-import {
-  addDays,
-  buildWeekDays,
-  createSets,
-  formatTime,
-  getExercise,
-  screenTitle,
-  tabs,
-  todayIso,
-} from './src/data/plans';
-import { styles } from './src/theme/styles';
-import {
-  advanceToNextExercise,
-  advanceToNextSet,
-  appendSetToCurrentExercise,
-  adjustRestTimer,
-  calculateWorkoutVolume,
-  completeCurrentSet,
-  findPreviousExercisePerformance,
-  getRestTimerRemaining,
-  pauseRestTimer,
-  resumeRestTimer,
-  toggleSupersetWithNext,
-} from './src/domain/workouts';
-import {
-  CustomExerciseInput,
-  createCustomExercise,
-  updateCustomExercise,
-} from './src/domain/exercises';
-import {
-  addExerciseToTemplate,
-  createWorkoutTemplate,
-  duplicateWorkoutTemplate,
-  getNextWorkoutTemplate,
-  moveExerciseInTemplate,
-  removeExerciseFromTemplate,
-  templateToPlanDay,
-  updateTemplateExercise,
-  updateWorkoutTemplateDetails,
-} from './src/domain/templates';
+import { addDays, buildWeekDays, createSets, formatTime, getExercise, getTodayIso, screenTitle, tabs } from './src/data/plans';
+import { createStarterTemplates } from './src/data/starterTemplates';
+import { CustomExerciseInput, createCustomExercise, updateCustomExercise } from './src/domain/exercises';
+import { linkWorkoutMachine, saveMachineMemory } from './src/domain/machineMemory';
+import { getEntryMetric, getExerciseMetric } from './src/domain/metrics';
 import { calculatePersonalRecords } from './src/domain/progress';
+import {
+  addExerciseToTemplate, createWorkoutTemplate, duplicateWorkoutTemplate, getNextWorkoutTemplate,
+  moveExerciseInTemplate, moveTemplate, removeExerciseFromTemplate, setTemplateArchived,
+  templateToPlanDay, updateTemplateExercise, updateWorkoutTemplateDetails,
+} from './src/domain/templates';
+import {
+  advanceToNextSet, adjustRestTimer, createWorkoutLog,
+  findPreviousExercisePerformance, getRestTimerRemaining, getWorkoutElapsedSeconds,
+  pauseRestTimer, pauseWorkout, resumeRestTimer, resumeWorkout,
+} from './src/domain/workouts';
 import { CalendarScreen } from './src/screens/CalendarScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { TemplatesScreen } from './src/screens/TemplatesScreen';
 import { WorkoutRestDock, WorkoutScreen } from './src/screens/WorkoutScreen';
-import { trainingRepository } from './src/storage/trainingRepository';
-import {
-  ActiveWorkout,
-  Exercise,
-  Level,
-  PlanDay,
-  TabKey,
-  TemplateExercise,
-  WorkoutLog,
-  WorkoutSet,
-  WorkoutTemplate,
-} from './src/types';
+import { TrainingState } from './src/storage/trainingStorage';
+import { useTrainingState } from './src/storage/useTrainingState';
+import { styles } from './src/theme/styles';
+import { ActiveWorkout, Level, PlanDay, TabKey, TemplateExercise, WorkoutLog, WorkoutTemplate } from './src/types';
 
 const localUserId = 'local-user';
+const createLocalId = (prefix = 'item') => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+type UndoAction = { label: string; apply: (state: TrainingState) => TrainingState };
 
 export default function App() {
+  const { state, setState, status, error, ready, hasConflict, importState, retrySave, reload } = useTrainingState();
+  const { schedule, logs, customExercises, templates, activeWorkout } = state;
+  const machineMemories = state.machineMemories ?? [];
+  const scrollRef = useRef<ScrollView>(null);
+  const [initialOpenLogId, setInitialOpenLogId] = useState<string | undefined>();
   const [tab, setTab] = useState<TabKey>('today');
-  const [schedule, setSchedule] = useState<Record<string, PlanDay>>({});
-  const [selectedDate, setSelectedDate] = useState(todayIso);
+  const [nowTick, setNowTick] = useState(Date.now);
+  const today = getTodayIso(new Date(nowTick));
+  const [selectedDate, setSelectedDate] = useState(today);
   const [selectedExerciseId, setSelectedExerciseId] = useState(exerciseDb[0].id);
   const [weekOffset, setWeekOffset] = useState(0);
   const [level, setLevel] = useState<Level>('simple');
-  const [logs, setLogs] = useState<WorkoutLog[]>([]);
-  const [customExercises, setCustomExercises] = useState<Exercise[]>([]);
-  const [templates, setTemplates] = useState<WorkoutTemplate[]>([]);
-  const [activeWorkout, setActiveWorkout] = useState<ActiveWorkout | null>(null);
-  const [storageReady, setStorageReady] = useState(false);
-  const [nowTick, setNowTick] = useState(() => Date.now());
-
+  const [undo, setUndo] = useState<UndoAction | null>(null);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [notice, setNotice] = useState('');
   const exercises = useMemo(() => [...exerciseDb, ...customExercises], [customExercises]);
   const selectedExercise = getExercise(selectedExerciseId, exercises);
-  const weekDays = buildWeekDays(logs, weekOffset);
-  const selectedLogs = logs
-    .filter((log) => log.date === selectedDate)
-    .sort((left, right) => right.startedAt - left.startedAt);
-  const todayLogs = logs
-    .filter((log) => log.date === todayIso)
-    .sort((left, right) => right.startedAt - left.startedAt);
-  const activeWorkoutElapsed = activeWorkout
-    ? Math.max(0, Math.floor((nowTick - activeWorkout.startedAt) / 1000))
-    : 0;
-  const activePreviousSets = activeWorkout
-    ? findPreviousExercisePerformance(
-        logs,
-        activeWorkout.userId,
-        activeWorkout.entries[activeWorkout.exerciseIndex]?.exerciseId ?? '',
-        activeWorkout.startedAt,
-      )
-    : null;
-  const activePersonalRecords = activeWorkout
-    ? calculatePersonalRecords(activeWorkout.entries, logs, activeWorkout.userId)
-    : [];
-  const nextTemplate = getNextWorkoutTemplate(
-    templates.filter((template) => template.exercises.length > 0),
-    logs,
-    localUserId,
-  );
-  const nextTemplateLastLog = nextTemplate
-    ? [...logs]
-        .filter((log) => log.templateId === nextTemplate.id && log.userId === localUserId)
-        .sort((left, right) => right.finishedAt - left.finishedAt)[0] ?? null
-    : null;
+  const weekDays = buildWeekDays(logs, weekOffset, today);
+  const selectedLogs = logs.filter((log) => log.date === selectedDate).sort((a, b) => b.startedAt - a.startedAt);
+  const todayLogs = logs.filter((log) => log.date === today).sort((a, b) => b.startedAt - a.startedAt);
+  const visibleEntry = activeWorkout?.entries.find((entry) => activeWorkout.phase === 'rest' && entry.id === activeWorkout.restNextExerciseId)
+    ?? activeWorkout?.entries[activeWorkout.exerciseIndex];
+  const activePreviousSets = activeWorkout && visibleEntry
+    ? findPreviousExercisePerformance(logs, localUserId, visibleEntry.exerciseId, activeWorkout.startedAt, visibleEntry.machineMemoryId, getEntryMetric(visibleEntry)) : null;
+  const nextTemplate = getNextWorkoutTemplate(templates.filter((template) => template.exercises.length > 0), logs, localUserId);
+  const nextTemplateLastLog = nextTemplate ? [...logs].filter((log) => log.templateId === nextTemplate.id).sort((a, b) => b.finishedAt - a.finishedAt)[0] ?? null : null;
+
+  useEffect(() => { registerOfflineSupport(); }, []);
+  useEffect(() => { scrollRef.current?.scrollTo({ y: 0, animated: false }); }, [tab]);
 
   useEffect(() => {
-    let mounted = true;
-
-    async function loadStoredTraining() {
-      try {
-        const stored = await trainingRepository.load();
-        if (!mounted || !stored) {
-          return;
-        }
-
-        const restoredWorkout = stored.activeWorkout;
-
-        setSchedule(stored.schedule);
-        setLogs(stored.logs);
-        setCustomExercises(stored.customExercises);
-        setTemplates(stored.templates);
-        setActiveWorkout(restoredWorkout);
-        setSelectedDate(todayIso);
-        setSelectedExerciseId(
-          restoredWorkout?.entries[restoredWorkout.exerciseIndex]?.exerciseId ??
-            exerciseDb[0].id,
-        );
-        if (restoredWorkout) {
-          setNowTick(Date.now());
-        }
-      } catch {
-        // Ignore invalid local data and keep the app usable.
-      } finally {
-        if (mounted) {
-          setStorageReady(true);
-        }
-      }
-    }
-
-    loadStoredTraining();
-
-    return () => {
-      mounted = false;
-    };
+    const timer = setInterval(() => setNowTick(Date.now()), 1000);
+    const refresh = () => setNowTick(Date.now());
+    if (typeof document !== 'undefined') document.addEventListener('visibilitychange', refresh);
+    return () => { clearInterval(timer); if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', refresh); };
   }, []);
 
   useEffect(() => {
-    if (!storageReady) {
-      return;
-    }
+    if (!activeWorkout || activeWorkout.phase !== 'rest' || activeWorkout.pausedAt !== undefined ||
+        activeWorkout.restPausedRemainingSeconds !== undefined || getRestTimerRemaining(activeWorkout, nowTick) > 0) return;
+    setState((current) => ({ ...current, activeWorkout: current.activeWorkout ? advanceToNextSet(current.activeWorkout) : null }));
+  }, [activeWorkout, nowTick, setState]);
 
-    trainingRepository.save({ schedule, logs, activeWorkout, customExercises, templates }).catch(() => {
-      // Local persistence failure should not block workout tracking.
-    });
-  }, [activeWorkout, customExercises, logs, schedule, storageReady, templates]);
+  function changeWorkout(update: (workout: ActiveWorkout) => ActiveWorkout) {
+    setState((current) => ({ ...current, activeWorkout: current.activeWorkout ? update(current.activeWorkout) : null }));
+  }
 
-  useEffect(() => {
-    if (!activeWorkout) {
-      return;
-    }
-
-    const timer = setInterval(() => {
-      setNowTick(Date.now());
-    }, 1000);
-
-    return () => clearInterval(timer);
-  }, [activeWorkout]);
-
-  useEffect(() => {
-    if (
-      !activeWorkout ||
-      activeWorkout.phase !== 'rest' ||
-      getRestTimerRemaining(activeWorkout, nowTick) > 0
-    ) {
-      return;
-    }
-
-    setActiveWorkout((current) => current ? advanceToNextSet(current) : current);
-  }, [activeWorkout, nowTick]);
-
-  function shiftWeek(direction: -1 | 1) {
-    setWeekOffset((current) => current + direction);
-    setSelectedDate((current) => addDays(current, direction * 7));
+  function openWorkout(workout: ActiveWorkout) {
+    if (activeWorkout) { setNotice('Najprv dokonči alebo zruš aktuálny tréning.'); setTab('workout'); return; }
+    setState((current) => ({ ...current, activeWorkout: workout, onboardingCompleted: true }));
+    setNowTick(Date.now());
+    setTab('workout');
+    setConfirmCancel(false);
   }
 
   function beginWorkout(day: PlanDay, templateId?: string) {
-    if (activeWorkout) {
-      setTab('workout');
-      return;
-    }
-
-    if (day.rest || day.exercises.length === 0) {
-      return;
-    }
-    const startedAt = Date.now();
+    if (activeWorkout) { setTab('workout'); return; }
+    if (day.rest) return;
+    const now = Date.now();
     const entries = day.exercises.map((item) => {
-      const workoutExerciseId = createLocalId('workout-exercise');
-      const previousSets = findPreviousExercisePerformance(
-        logs,
-        localUserId,
-        item.exerciseId,
-        startedAt,
-      );
-
-      return {
-        id: workoutExerciseId,
-        exerciseId: item.exerciseId,
-        restSeconds: item.restSeconds,
-        sets: createSets(item, {
-          workoutExerciseId,
-          setIds: Array.from({ length: item.sets }, () => createLocalId('set')),
-          createdAt: startedAt,
-          previousSets,
-        }),
-      };
+      const id = createLocalId('exercise');
+      const exercise = getExercise(item.exerciseId, exercises);
+      const metric = getExerciseMetric(exercise);
+      const previousSets = findPreviousExercisePerformance(logs, localUserId, item.exerciseId, now, undefined, metric);
+      return { id, exerciseId: item.exerciseId, metric, restSeconds: item.restSeconds, notes: item.notes,
+        sets: createSets(item, { workoutExerciseId: id, setIds: Array.from({ length: item.sets }, () => createLocalId('set')), createdAt: now, previousSets })
+          .map((set, index) => ({ ...set, ...(metric === 'duration' ? { durationSeconds: previousSets?.[index]?.durationSeconds ?? item.reps, reps: 0, weightKg: 0 } : {}),
+            ...(metric === 'distance_duration' ? { durationSeconds: previousSets?.[index]?.durationSeconds ?? 600, distanceKm: previousSets?.[index]?.distanceKm ?? 0, reps: 0, weightKg: 0 } : {}) })) };
     });
-
-    setActiveWorkout({
-      id: createLocalId('session'),
-      userId: localUserId,
-      dayId: day.id,
-      templateId,
-      name: day.label,
-      startedAt,
-      exerciseIndex: 0,
-      setIndex: 0,
-      phase: 'set',
-      restTargetSeconds: day.exercises[0]?.restSeconds ?? 90,
-      entries,
-    });
-    setNowTick(startedAt);
-    setSelectedDate(day.id);
-    setSelectedExerciseId(day.exercises[0].exerciseId);
-    setTab('workout');
+    openWorkout({ id: createLocalId('session'), userId: localUserId, dayId: day.id, templateId, name: day.label, startedAt: now,
+      exerciseIndex: 0, setIndex: 0, phase: 'set', restTargetSeconds: entries[0]?.restSeconds ?? 90, entries });
   }
 
-  function updateSetAtIndex(targetSetIndex: number, patch: Partial<WorkoutSet>) {
-    setActiveWorkout((current) => {
-      if (!current) {
-        return current;
-      }
-
-      return {
-        ...current,
-        entries: current.entries.map((entry, entryIndex) =>
-          entryIndex === current.exerciseIndex
-            ? {
-                ...entry,
-                sets: entry.sets.map((set, setIndex) =>
-                  setIndex === targetSetIndex ? { ...set, ...patch } : set,
-                ),
-              }
-            : entry,
-        ),
-      };
-    });
+  function startTemplate(template: WorkoutTemplate) { beginWorkout(templateToPlanDay(template, today), template.id); }
+  function startEmpty() { beginWorkout({ id: today, date: today, label: 'Voľný tréning', focus: '', exercises: [] }); }
+  function startStarter(index: number) {
+    if (activeWorkout) { setTab('workout'); return; }
+    const template = createStarterTemplates(localUserId, Date.now(), createLocalId)[index];
+    if (!template) return;
+    setState((current) => ({ ...current, templates: [...current.templates, template] }));
+    startTemplate(template);
   }
 
-  function updateWorkoutNotes(notes: string) {
-    setActiveWorkout((current) => current ? { ...current, notes } : current);
-  }
-
-  function updateExerciseNotes(notes: string) {
-    setActiveWorkout((current) => {
-      if (!current) {
-        return current;
-      }
-
-      return {
-        ...current,
-        entries: current.entries.map((entry, entryIndex) =>
-          entryIndex === current.exerciseIndex ? { ...entry, notes } : entry,
-        ),
-      };
-    });
-  }
-
-  function toggleCurrentSuperset() {
-    setActiveWorkout((current) =>
-      current
-        ? toggleSupersetWithNext(current, createLocalId('superset'))
-        : current,
-    );
-  }
-
-  function completeSet() {
-    setActiveWorkout((current) => {
-      if (!current) {
-        return current;
-      }
-
-      const restSeconds = current.entries[current.exerciseIndex]?.restSeconds;
-      const completed = completeCurrentSet(
-        current,
-        restSeconds ?? current.restTargetSeconds,
-        Date.now(),
-      );
-      if (completed.phase !== 'between') {
-        return completed;
-      }
-
-      const nextExerciseIndex = completed.exerciseIndex + 1;
-      return advanceToNextExercise(
-        completed,
-        completed.entries[nextExerciseIndex]?.restSeconds ?? 90,
-      );
-    });
-  }
-
-  function nextSet() {
-    setActiveWorkout((current) => {
-      if (!current) {
-        return current;
-      }
-
-      return advanceToNextSet(current);
-    });
-  }
-
-  function nextExercise() {
-    setActiveWorkout((current) => {
-      if (!current) {
-        return current;
-      }
-
-      const nextExerciseIndex = current.exerciseIndex + 1;
-
-      return advanceToNextExercise(
-        current,
-        current.entries[nextExerciseIndex]?.restSeconds ?? 90,
-      );
-    });
-  }
-
-  function addCurrentSet() {
-    setActiveWorkout((current) => {
-      if (!current) {
-        return current;
-      }
-
-      return appendSetToCurrentExercise(current, {
-        id: createLocalId('set'),
-        createdAt: Date.now(),
-      });
-    });
-  }
-
-  function pauseRest() {
-    setActiveWorkout((current) => current ? pauseRestTimer(current, Date.now()) : current);
-  }
-
-  function resumeRest() {
-    setActiveWorkout((current) => current ? resumeRestTimer(current, Date.now()) : current);
-  }
-
-  function adjustRest(adjustmentSeconds: number) {
-    setActiveWorkout((current) =>
-      current ? adjustRestTimer(current, adjustmentSeconds, Date.now()) : current,
-    );
-  }
-
-  function finishWorkout() {
-    if (!activeWorkout) {
-      return;
-    }
-
-    const volumeKg = calculateWorkoutVolume(activeWorkout.entries);
-    const finishedAt = Date.now();
-    const workoutDate = activeWorkout.dayId;
-
-    setLogs((current) => [
-      {
-        id: activeWorkout.id,
-        userId: activeWorkout.userId,
-        dayId: activeWorkout.dayId,
-        templateId: activeWorkout.templateId,
-        name: activeWorkout.name,
-        notes: activeWorkout.notes,
-        date: workoutDate,
-        startedAt: activeWorkout.startedAt,
-        finishedAt,
-        volumeKg,
-        durationSeconds: Math.max(0, Math.floor((finishedAt - activeWorkout.startedAt) / 1000)),
-        entries: activeWorkout.entries,
-      },
-      ...current,
-    ]);
-    setActiveWorkout(null);
-    setSelectedDate(workoutDate);
+  function saveWorkout() {
+    if (!activeWorkout) return;
+    const log = createWorkoutLog(activeWorkout, Date.now());
+    if (!log.entries.some((entry) => entry.sets.length > 0)) { setNotice('Najprv odcvič aspoň jednu sériu, alebo zruš prázdny tréning.'); return; }
+    setState((current) => ({ ...current, logs: [log, ...current.logs.filter((existing) => existing.id !== log.id)], activeWorkout: null }));
+    setSelectedDate(log.date);
     setTab('calendar');
+    setNotice('Tréning bol dokončený. Stav uloženia vidíš hore.');
   }
 
-  function cancelActiveWorkout() {
-    setActiveWorkout(null);
+  function discardWorkout() {
+    if (!activeWorkout) return;
+    const cancelled = pauseWorkout(activeWorkout, Date.now());
+    setUndo({ label: 'Tréning bol zrušený', apply: (current) => current.activeWorkout ? current : { ...current, activeWorkout: resumeWorkout(cancelled, Date.now()) } });
+    setState((current) => ({ ...current, activeWorkout: null }));
+    setConfirmCancel(false);
     setTab('today');
   }
 
-  function addCustomExercise(input: CustomExerciseInput) {
-    const exercise = createCustomExercise(input, {
-      id: `custom-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      userId: localUserId,
+  function repeatWorkout(log: WorkoutLog) {
+    const now = Date.now();
+    const entries = log.entries.filter((entry) => entry.sets.some((set) => set.done)).map((entry) => {
+      const id = createLocalId('exercise');
+      return { ...entry, id, skipped: false, sets: entry.sets.filter((set) => set.done).map((set) => ({ ...set,
+        id: createLocalId('set'), workoutExerciseId: id, done: false, createdAt: now, completedAt: undefined })) };
     });
+    openWorkout({ id: createLocalId('session'), userId: localUserId, dayId: today, templateId: log.templateId,
+      name: log.name, notes: log.notes, startedAt: now, exerciseIndex: 0, setIndex: 0, phase: 'set', restTargetSeconds: entries[0]?.restSeconds ?? 90, entries });
+  }
 
-    setCustomExercises((current) => [...current, exercise]);
+  function deleteLog(id: string) {
+    const deleted = logs.find((log) => log.id === id);
+    if (!deleted) return;
+    setState((current) => ({ ...current, logs: current.logs.filter((log) => log.id !== id) }));
+    setUndo({ label: 'Tréning bol vymazaný', apply: (current) => ({ ...current, logs: current.logs.some((log) => log.id === id) ? current.logs : [...current.logs, deleted] }) });
+  }
+  function updateLog(log: WorkoutLog) {
+    setState((current) => ({ ...current, logs: current.logs.map((item) => item.id === log.id ? log : item) }));
+  }
+  async function importBackup(imported: TrainingState) {
+    const previous = state;
+    await importState(imported);
+    setUndo({ label: 'Záloha bola importovaná', apply: () => previous });
+    setSelectedDate(today);
+    setNotice('Import je uložený.');
+  }
+  function addCustom(input: CustomExerciseInput) {
+    const exercise = createCustomExercise(input, { id: createLocalId('custom'), userId: localUserId });
+    setState((current) => ({ ...current, customExercises: [...current.customExercises, exercise] }));
     setSelectedExerciseId(exercise.id);
   }
-
-  function editCustomExercise(exerciseId: string, input: CustomExerciseInput) {
-    setCustomExercises((current) =>
-      current.map((exercise) =>
-        exercise.id === exerciseId
-          ? updateCustomExercise(exercise, input, localUserId)
-          : exercise,
-      ),
-    );
+  function editCustom(id: string, input: CustomExerciseInput) {
+    setState((current) => ({ ...current, customExercises: current.customExercises.map((exercise) => exercise.id === id ? updateCustomExercise(exercise, input, localUserId) : exercise) }));
   }
-
   function addTemplate() {
-    const now = Date.now();
-    const template = createWorkoutTemplate(
-      { name: 'New template' },
-      { id: createLocalId('template'), userId: localUserId, createdAt: now },
-    );
-    setTemplates((current) => [...current, template]);
+    const template = createWorkoutTemplate({ name: 'Nový plán' }, { id: createLocalId('template'), userId: localUserId, createdAt: Date.now() });
+    setState((current) => ({ ...current, templates: [...current.templates, template] }));
     return template;
   }
-
-  function updateTemplateDetails(
-    templateId: string,
-    patch: { name?: string; description?: string },
-  ) {
-    setTemplates((current) =>
-      current.map((template) =>
-        template.id === templateId
-          ? updateWorkoutTemplateDetails(template, patch, Date.now())
-          : template,
-      ),
-    );
-  }
-
-  function duplicateTemplate(templateId: string) {
-    const source = templates.find((template) => template.id === templateId);
-    if (!source) {
-      throw new Error('Template not found.');
-    }
-
-    const duplicate = duplicateWorkoutTemplate(source, {
-      id: createLocalId('template'),
-      userId: localUserId,
-      createdAt: Date.now(),
-      templateExerciseIds: source.exercises.map(() => createLocalId('template-exercise')),
-    });
-    setTemplates((current) => [...current, duplicate]);
+  function duplicateTemplate(id: string) {
+    const source = templates.find((template) => template.id === id);
+    if (!source) throw new Error('Plán neexistuje.');
+    const duplicate = duplicateWorkoutTemplate(source, { id: createLocalId('template'), userId: localUserId, createdAt: Date.now(), templateExerciseIds: source.exercises.map(() => createLocalId('exercise')) });
+    setState((current) => ({ ...current, templates: [...current.templates, duplicate] }));
     return duplicate;
   }
-
-  function addExerciseToWorkoutTemplate(templateId: string, exerciseId: string) {
-    setTemplates((current) =>
-      current.map((template) =>
-        template.id === templateId
-          ? addExerciseToTemplate(
-              template,
-              exerciseId,
-              createLocalId('template-exercise'),
-              Date.now(),
-            )
-          : template,
-      ),
-    );
+  function changeTemplate(id: string, change: (template: WorkoutTemplate) => WorkoutTemplate) {
+    setState((current) => ({ ...current, templates: current.templates.map((template) => template.id === id ? change(template) : template) }));
+  }
+  function deleteTemplate(id: string) {
+    const deleted = templates.find((template) => template.id === id);
+    if (!deleted) return;
+    setState((current) => ({ ...current, templates: current.templates.filter((template) => template.id !== id) }));
+    setUndo({ label: 'Plán bol vymazaný', apply: (current) => ({ ...current, templates: current.templates.some((template) => template.id === id) ? current.templates : [...current.templates, deleted] }) });
   }
 
-  function editWorkoutTemplateExercise(
-    templateId: string,
-    templateExerciseId: string,
-    patch: Partial<Omit<TemplateExercise, 'id' | 'exerciseId' | 'order'>>,
-  ) {
-    setTemplates((current) =>
-      current.map((template) =>
-        template.id === templateId
-          ? updateTemplateExercise(template, templateExerciseId, patch, Date.now())
-          : template,
-      ),
-    );
-  }
+  if (!ready || hasConflict) return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.content}>
+    <Text style={styles.title}>{status === 'loading' ? 'Načítavam tréningy…' : hasConflict ? 'Zmeny v inej karte' : 'Dáta sa nepodarilo načítať'}</Text>
+    {error ? <><Text style={styles.compactText}>{error}</Text><Pressable style={styles.secondaryFull} onPress={reload}><Text style={styles.secondaryText}>Skúsiť načítať znova</Text></Pressable>
+      <BackupPanel state={state} allowExport={ready} onImport={importBackup} /></> : null}
+  </ScrollView></SafeAreaView>;
 
-  function removeWorkoutTemplateExercise(templateId: string, templateExerciseId: string) {
-    setTemplates((current) =>
-      current.map((template) =>
-        template.id === templateId
-          ? removeExerciseFromTemplate(template, templateExerciseId, Date.now())
-          : template,
-      ),
-    );
-  }
-
-  function moveWorkoutTemplateExercise(
-    templateId: string,
-    templateExerciseId: string,
-    direction: -1 | 1,
-  ) {
-    setTemplates((current) =>
-      current.map((template) =>
-        template.id === templateId
-          ? moveExerciseInTemplate(template, templateExerciseId, direction, Date.now())
-          : template,
-      ),
-    );
-  }
-
-  function startWorkoutFromTemplate(template: WorkoutTemplate) {
-    beginWorkout(templateToPlanDay(template, todayIso), template.id);
-  }
-
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" />
-      <View style={styles.app}>
-        <BackgroundLines />
-
-        <View style={styles.header}>
-          <View style={styles.logoFrame}>
-            <Image source={hamsterLogo} style={styles.logo} />
-          </View>
-          <View style={styles.headerText}>
-            <Text style={styles.title}>{screenTitle(tab)}</Text>
-          </View>
-          {activeWorkout ? (
-            <View style={styles.headerClock}>
-              <Text style={styles.badgeLabel}>workout</Text>
-              <Text style={styles.headerClockText}>{formatTime(activeWorkoutElapsed)}</Text>
-            </View>
-          ) : (
-            <View style={styles.badge}>
-              <Text style={styles.badgeValue}>{logs.length}</Text>
-              <Text style={styles.badgeLabel}>workouts</Text>
-            </View>
-          )}
-        </View>
-
-        <ScrollView
-          contentContainerStyle={[
-            styles.content,
-            tab === 'workout' && activeWorkout?.phase === 'rest'
-              ? styles.contentWithRestDock
-              : null,
-          ]}
-          showsVerticalScrollIndicator={false}
-        >
-          {tab === 'today' ? (
-            <TodayScreen
-              logs={todayLogs}
-              templates={templates}
-              nextTemplate={nextTemplate}
-              nextTemplateLastLog={nextTemplateLastLog}
-              activeWorkoutLabel={activeWorkout?.name ?? null}
-              activeWorkoutElapsed={activeWorkoutElapsed}
-              hasActiveWorkout={Boolean(activeWorkout)}
-              onStartTemplate={startWorkoutFromTemplate}
-              onResume={() => setTab('workout')}
-              onCancelWorkout={cancelActiveWorkout}
-              onOpenPlans={() => setTab('templates')}
-            />
-          ) : null}
-
-          {tab === 'library' ? (
-            <LibraryScreen
-              exercises={exercises}
-              selectedExercise={selectedExercise}
-              level={level}
-              logs={logs}
-              userId={localUserId}
-              onSelectExercise={setSelectedExerciseId}
-              onLevel={setLevel}
-              onCreateCustomExercise={addCustomExercise}
-              onUpdateCustomExercise={editCustomExercise}
-            />
-          ) : null}
-
-          {tab === 'templates' ? (
-            <TemplatesScreen
-              templates={templates}
-              exercises={exercises}
-              onCreate={addTemplate}
-              onUpdateDetails={updateTemplateDetails}
-              onDuplicate={duplicateTemplate}
-              onAddExercise={addExerciseToWorkoutTemplate}
-              onUpdateExercise={editWorkoutTemplateExercise}
-              onRemoveExercise={removeWorkoutTemplateExercise}
-              onMoveExercise={moveWorkoutTemplateExercise}
-              onStart={startWorkoutFromTemplate}
-            />
-          ) : null}
-
-          {tab === 'calendar' ? (
-            <CalendarScreen
-              exercises={exercises}
-              weekDays={weekDays}
-              weekOffset={weekOffset}
-              selectedDate={selectedDate}
-              selectedLogs={selectedLogs}
-              onSelectDate={setSelectedDate}
-              onPreviousWeek={() => shiftWeek(-1)}
-              onNextWeek={() => shiftWeek(1)}
-              onOpenPlans={() => setTab('templates')}
-            />
-          ) : null}
-
-          {tab === 'profile' ? (
-            <ProfileScreen logs={logs} schedule={schedule} />
-          ) : null}
-
-          {tab === 'workout' && activeWorkout ? (
-            <WorkoutScreen
-              exercises={exercises}
-              workout={activeWorkout}
-              previousSets={activePreviousSets}
-              personalRecords={activePersonalRecords}
-              now={nowTick}
-              onUpdateSetAtIndex={updateSetAtIndex}
-              onUpdateWorkoutNotes={updateWorkoutNotes}
-              onUpdateExerciseNotes={updateExerciseNotes}
-              onCompleteSet={completeSet}
-              onNextExercise={nextExercise}
-              onAddSet={addCurrentSet}
-              onToggleSuperset={toggleCurrentSuperset}
-              onFinish={finishWorkout}
-              onCancel={() => {
-                setTab('today');
-              }}
-            />
-          ) : null}
-        </ScrollView>
-
-        {tab === 'workout' && activeWorkout?.phase === 'rest' ? (
-          <WorkoutRestDock
-            workout={activeWorkout}
-            now={nowTick}
-            onPause={pauseRest}
-            onResume={resumeRest}
-            onAdjust={adjustRest}
-            onSkip={nextSet}
-          />
-        ) : null}
-
-        {tab !== 'workout' ? (
-          <View style={styles.tabBar}>
-            {tabs.map((item) => {
-              const active = tab === item.key;
-
-              return (
-                <Pressable
-                  key={item.key}
-                  onPress={() => setTab(item.key)}
-                  style={[styles.tabButton, active ? styles.tabActive : null]}
-                >
-                  <Text style={[styles.tabText, active ? styles.tabTextActive : null]}>
-                    {item.label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        ) : null}
+  return <SafeAreaView style={styles.safeArea}>
+    <StatusBar style="light" />
+    <View style={styles.app}>
+      <BackgroundLines />
+      <View style={styles.header}>
+        <View style={styles.logoFrame}><Image source={hamsterLogo} style={styles.logo} /></View>
+        <View style={styles.headerText}><Text style={styles.title}>{screenTitle(tab)}</Text></View>
+        <View style={styles.headerClock}><Text style={styles.badgeLabel}>{activeWorkout ? 'workout' : 'workouts'}</Text><Text style={styles.headerClockText}>{activeWorkout ? formatTime(getWorkoutElapsedSeconds(activeWorkout, nowTick)) : logs.length}</Text></View>
       </View>
-    </SafeAreaView>
-  );
-}
-
-function createLocalId(prefix: string) {
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      <View style={{ paddingHorizontal: 18, paddingBottom: 6 }}>
+        <Text accessibilityLiveRegion="polite" style={[styles.rowMuted, status === 'error' ? { color: '#FF8CB9' } : null]}>{status === 'saving' ? 'Ukladám…' : status === 'error' ? `Ukladanie zlyhalo: ${error}` : 'Uložené v tomto zariadení'}</Text>
+        {status === 'error' ? <View style={styles.chipRow}>
+          <Pressable style={styles.smallButton} onPress={retrySave}><Text style={styles.smallButtonText}>Zopakovať uloženie</Text></Pressable>
+          <Pressable style={styles.smallButton} onPress={() => setTab('profile')}><Text style={styles.smallButtonText}>Exportovať zálohu</Text></Pressable>
+        </View> : null}
+      </View>
+      <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, activeWorkout?.phase === 'rest' && tab === 'workout' ? styles.contentWithRestDock : null]}>
+        {notice ? <Pressable style={styles.card} onPress={() => setNotice('')}><Text style={styles.compactText}>{notice} · zavrieť</Text></Pressable> : null}
+        {undo ? <View style={styles.card}><Text style={styles.rowTitle}>{undo.label}</Text><Pressable style={styles.smallButton} onPress={() => { setState(undo.apply); setUndo(null); }}><Text style={styles.smallButtonText}>Vrátiť zmenu</Text></Pressable><Pressable onPress={() => setUndo(null)}><Text style={styles.rowMuted}>Zavrieť</Text></Pressable></View> : null}
+        {tab === 'today' ? <TodayScreen logs={todayLogs} allLogs={logs} exercises={exercises} userId={localUserId} today={today} templates={templates} nextTemplate={nextTemplate} nextTemplateLastLog={nextTemplateLastLog}
+          activeWorkoutLabel={activeWorkout?.name ?? null} activeWorkoutElapsed={activeWorkout ? getWorkoutElapsedSeconds(activeWorkout, nowTick) : 0} hasActiveWorkout={Boolean(activeWorkout)}
+          onStartTemplate={startTemplate} onStartEmpty={startEmpty} onStartStarter={startStarter} onResume={() => setTab('workout')} onCancelWorkout={() => setConfirmCancel(true)} onOpenPlans={() => setTab('templates')}
+          onOpenLog={(id) => { const log = logs.find((item) => item.id === id); if (log) { setSelectedDate(log.date); setInitialOpenLogId(id); setTab('calendar'); } }} /> : null}
+        {tab === 'library' ? <LibraryScreen exercises={exercises} selectedExercise={selectedExercise} level={level} logs={logs} userId={localUserId} machineMemories={machineMemories} onSelectExercise={setSelectedExerciseId} onLevel={setLevel} onCreateCustomExercise={addCustom} onUpdateCustomExercise={editCustom} /> : null}
+        {tab === 'templates' ? <TemplatesScreen templates={templates} exercises={exercises} onCreate={addTemplate} onDuplicate={duplicateTemplate} onStart={startTemplate}
+          onUpdateDetails={(id, patch) => changeTemplate(id, (template) => updateWorkoutTemplateDetails(template, patch, Date.now()))}
+          onAddExercise={(id, exerciseId) => changeTemplate(id, (template) => addExerciseToTemplate(template, exerciseId, createLocalId('exercise'), Date.now(), getExerciseMetric(getExercise(exerciseId, exercises))))}
+          onUpdateExercise={(id, exerciseId, patch: Partial<Omit<TemplateExercise, 'id' | 'exerciseId' | 'order'>>) => changeTemplate(id, (template) => updateTemplateExercise(template, exerciseId, patch, Date.now()))}
+          onRemoveExercise={(id, exerciseId) => changeTemplate(id, (template) => removeExerciseFromTemplate(template, exerciseId, Date.now()))}
+          onMoveExercise={(id, exerciseId, direction) => changeTemplate(id, (template) => moveExerciseInTemplate(template, exerciseId, direction, Date.now()))}
+          onArchive={(id, archived) => changeTemplate(id, (template) => setTemplateArchived(template, archived, Date.now()))} onDelete={deleteTemplate}
+          onMoveTemplate={(id, direction) => setState((current) => ({ ...current, templates: moveTemplate(current.templates, id, direction) }))}
+          onAddStarters={() => setState((current) => ({ ...current, templates: [...current.templates, ...createStarterTemplates(localUserId, Date.now(), createLocalId)] }))} /> : null}
+        {tab === 'calendar' ? <CalendarScreen exercises={exercises} weekDays={weekDays} weekOffset={weekOffset} selectedDate={selectedDate} selectedLogs={selectedLogs} allLogs={logs} today={today} initialOpenLogId={initialOpenLogId}
+          onSelectDate={setSelectedDate} onPreviousWeek={() => { setWeekOffset(weekOffset - 1); setSelectedDate(addDays(selectedDate, -7)); }} onNextWeek={() => { setWeekOffset(weekOffset + 1); setSelectedDate(addDays(selectedDate, 7)); }}
+          onOpenPlans={() => setTab('templates')} onUpdateLog={updateLog} onDeleteLog={deleteLog} onRepeatLog={repeatWorkout} /> : null}
+        {tab === 'profile' ? <View style={styles.screen}><BackupPanel state={state} onImport={importBackup} /><ProfileScreen logs={logs} schedule={schedule} exercises={exercises} onUpdateLog={updateLog} onDeleteLog={deleteLog} onRepeatLog={repeatWorkout} /></View> : null}
+        {tab === 'workout' && activeWorkout ? <View style={styles.screen}>
+          {visibleEntry ? <MachineMemoryPanel key={`${visibleEntry.id}-${visibleEntry.machineMemoryId ?? ''}`} entry={visibleEntry} memories={machineMemories} logs={logs} userId={localUserId}
+            onSelect={(memory) => changeWorkout((workout) => linkWorkoutMachine(workout, visibleEntry.id, memory))}
+            onSave={(input) => setState((current) => { const result = saveMachineMemory(current.machineMemories ?? [], input, createLocalId('machine'), Date.now()); return { ...current, machineMemories: result.memories, activeWorkout: current.activeWorkout ? linkWorkoutMachine(current.activeWorkout, visibleEntry.id, result.memory) : null }; })} /> : null}
+          <WorkoutScreen workout={activeWorkout} exercises={exercises} logs={logs} now={nowTick} previousSets={activePreviousSets} personalRecords={calculatePersonalRecords(activeWorkout.entries, logs, localUserId)}
+            onChange={(workout) => setState((current) => ({ ...current, activeWorkout: workout }))} onFinish={saveWorkout} onCancel={() => setConfirmCancel(true)} onMinimize={() => setTab('today')} />
+          <Pressable style={styles.dangerOutlineFull} onPress={() => setConfirmCancel(true)}><Text style={styles.dangerOutlineText}>Zrušiť tréning</Text></Pressable>
+        </View> : null}
+      </ScrollView>
+      <ConfirmationDialog visible={confirmCancel && Boolean(activeWorkout)} title="Zrušiť rozbehnutý tréning?" description="Odcvičené série sa neuložia do histórie. Po zrušení môžeš zmenu vrátiť." onConfirm={discardWorkout} onCancel={() => setConfirmCancel(false)} />
+      {tab === 'workout' && activeWorkout?.phase === 'rest' ? <WorkoutRestDock workout={activeWorkout} now={nowTick}
+        onPause={() => changeWorkout((workout) => pauseRestTimer(workout, Date.now()))} onResume={() => changeWorkout((workout) => resumeRestTimer(workout, Date.now()))}
+        onAdjust={(seconds) => changeWorkout((workout) => adjustRestTimer(workout, seconds, Date.now()))}
+        onSkip={() => changeWorkout((workout) => advanceToNextSet(workout))} /> : null}
+      {tab !== 'workout' ? <View style={styles.tabBar}>{tabs.map((item) => <Pressable key={item.key} onPress={() => { setTab(item.key); setConfirmCancel(false); }} style={[styles.tabButton, tab === item.key ? styles.tabActive : null]}><Text style={[styles.tabText, tab === item.key ? styles.tabTextActive : null]}>{item.label}</Text></Pressable>)}</View> : null}
+    </View>
+  </SafeAreaView>;
 }

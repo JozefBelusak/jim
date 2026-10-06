@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "vitest run",
-    "build": "expo export --platform web"
+    "build": "expo export --platform web && node scripts/create-offline-bundle.cjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

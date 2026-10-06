@@ -2,6 +2,7 @@ import {
   Equipment,
   Exercise,
   ExerciseCategory,
+  ExerciseMetric,
   MovementType,
   MuscleGroup,
   WeightMode,
@@ -31,6 +32,8 @@ export type CustomExerciseInput = {
   technicalInstructions?: string;
   imageUrl?: string;
   videoUrl?: string;
+  metric?: ExerciseMetric;
+  equipmentAlternatives?: Equipment[];
 };
 
 export const muscleGroupOptions: readonly MuscleGroup[] = [
@@ -88,8 +91,9 @@ export function createCustomExercise(
     secondaryMuscles: [...(input.secondaryMuscles ?? [])],
     instructions: normalizeOptionalText(input.instructions),
     technicalInstructions: normalizeOptionalText(input.technicalInstructions),
-    imageUrl: normalizeOptionalText(input.imageUrl),
-    videoUrl: normalizeOptionalText(input.videoUrl),
+    imageUrl: normalizeExerciseMediaUrl(input.imageUrl),
+    videoUrl: normalizeExerciseMediaUrl(input.videoUrl),
+    ...(input.equipmentAlternatives ? { equipmentAlternatives: [...new Set(input.equipmentAlternatives)].filter((equipment) => equipment !== input.equipment) } : {}),
     isCustom: true,
     createdBy: identity.userId,
   };
@@ -117,25 +121,27 @@ export function getMuscleFilters(exercises: Exercise[]) {
 export function getEquipmentFilters(exercises: Exercise[]) {
   return [
     allEquipmentFilter,
-    ...Array.from(new Set(exercises.map((exercise) => exercise.equipment))),
+    ...Array.from(new Set(exercises.flatMap((exercise) => [exercise.equipment, ...(exercise.equipmentAlternatives ?? [])]))),
   ] satisfies EquipmentFilter[];
 }
 
 export function filterExercises(exercises: Exercise[], filters: ExerciseFilters) {
-  const normalizedQuery = filters.query?.trim().toLocaleLowerCase() ?? '';
+  const tokens = normalizeSearch(filters.query ?? '').split(/\s+/).filter(Boolean);
 
   return exercises.filter((exercise) => {
     const matchesQuery =
-      normalizedQuery.length === 0 ||
-      exercise.name.toLocaleLowerCase().includes(normalizedQuery);
+      tokens.length === 0 ||
+      tokens.every((token) => normalizeSearch([exercise.name, formatMuscleGroup(exercise.primaryMuscle), ...exercise.secondaryMuscles.map(formatMuscleGroup), formatEquipment(exercise.equipment), ...(exercise.equipmentAlternatives ?? []).map(formatEquipment)].join(' ')).includes(token));
     const matchesMuscle =
       !filters.muscle ||
       filters.muscle === allMusclesFilter ||
-      exercise.primaryMuscle === filters.muscle;
+      exercise.primaryMuscle === filters.muscle ||
+      exercise.secondaryMuscles.includes(filters.muscle);
     const matchesEquipment =
       !filters.equipment ||
       filters.equipment === allEquipmentFilter ||
-      exercise.equipment === filters.equipment;
+      exercise.equipment === filters.equipment ||
+      Boolean(exercise.equipmentAlternatives?.includes(filters.equipment));
 
     return matchesQuery && matchesMuscle && matchesEquipment;
   });
@@ -164,4 +170,39 @@ function formatToken(value: string) {
 function normalizeOptionalText(value: string | undefined) {
   const normalized = value?.trim();
   return normalized ? normalized : undefined;
+}
+
+export const exerciseMetricOptions: readonly ExerciseMetric[] = [
+  'weight_reps', 'reps', 'duration', 'distance_duration', 'assisted_reps',
+];
+
+export function formatExerciseMetric(metric: ExerciseMetric) {
+  const labels: Record<ExerciseMetric, string> = {
+    weight_reps: 'Weight + reps',
+    reps: 'Reps only',
+    duration: 'Time (seconds)',
+    distance_duration: 'Distance + time',
+    assisted_reps: 'Assistance + reps',
+  };
+  return labels[metric];
+}
+
+function normalizeSearch(value: string) {
+  return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase();
+}
+
+export function normalizeExerciseMediaUrl(value: string | undefined) {
+  const normalized = normalizeOptionalText(value);
+  if (!normalized) {
+    return undefined;
+  }
+  try {
+    const url = new URL(normalized);
+    if (url.protocol === 'http:' || url.protocol === 'https:') {
+      return url.toString();
+    }
+  } catch {
+    // The form shows the validation message without storing an unsafe URL.
+  }
+  throw new Error('Media URLs must start with https:// or http://.');
 }

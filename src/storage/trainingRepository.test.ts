@@ -8,6 +8,15 @@ function emptyState(): TrainingState {
 }
 
 describe('training repository', () => {
+  it.each(['v6', 'v5', 'v1'])('rejects an empty %s value instead of treating it as missing data', async (version) => {
+    const storage: KeyValueStorage = {
+      getItem: vi.fn(async (key) => key.endsWith(`.${version}`) ? '' : null),
+      setItem: vi.fn(async () => undefined),
+    };
+    await expect(createTrainingRepository(storage).load()).rejects.toThrow('poškodené');
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
   it('falls back to legacy data when current data is missing', async () => {
     const legacy = JSON.stringify(emptyState());
     const storage: KeyValueStorage = {
@@ -22,7 +31,7 @@ describe('training repository', () => {
     const current = { ...emptyState(), logs: [] };
     const storage: KeyValueStorage = {
       getItem: vi.fn(async (key) =>
-        key.endsWith('.v5') ? serializeTrainingState(current, 1) : JSON.stringify({ broken: true }),
+        key.endsWith('.v6') ? serializeTrainingState(current, 1) : JSON.stringify({ broken: true }),
       ),
       setItem: vi.fn(async () => undefined),
     };
@@ -50,15 +59,15 @@ describe('training repository', () => {
       customExercises: [],
       templates: [],
     });
-    expect(storage.getItem).toHaveBeenCalledTimes(4);
+    expect(storage.getItem).toHaveBeenCalledTimes(5);
   });
 
-  it('falls back to legacy data when the current envelope is damaged', async () => {
+  it('fails closed when current data is damaged instead of overwriting it with legacy data', async () => {
     const legacy = JSON.stringify(emptyState());
     const storage: KeyValueStorage = {
       getItem: vi.fn(async (key) =>
-        key.endsWith('.v5')
-          ? JSON.stringify({ version: 5, savedAt: 1, data: { broken: true } })
+        key.endsWith('.v6')
+          ? JSON.stringify({ version: 6, savedAt: 1, data: { broken: true } })
           : key.endsWith('.v1')
             ? legacy
             : null,
@@ -66,8 +75,25 @@ describe('training repository', () => {
       setItem: vi.fn(async () => undefined),
     };
 
-    await expect(createTrainingRepository(storage).load()).resolves.toEqual(emptyState());
-    expect(storage.getItem).toHaveBeenCalledTimes(5);
+    await expect(createTrainingRepository(storage).load()).rejects.toThrow('poškodené');
+    expect(storage.getItem).toHaveBeenCalledTimes(1);
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('does not overwrite unrecoverable data with an empty state', async () => {
+    const storage: KeyValueStorage = { getItem: vi.fn(async () => '{broken'), setItem: vi.fn(async () => undefined) };
+    await expect(createTrainingRepository(storage).load()).rejects.toThrow('poškodené');
+    expect(storage.setItem).not.toHaveBeenCalled();
+  });
+
+  it('migrates v5 without modifying the old storage key', async () => {
+    const data = { ...emptyState(), machineMemories: [] };
+    const oldRaw = JSON.stringify({ version: 5, savedAt: 1, data });
+    const storage: KeyValueStorage = { getItem: vi.fn(async (key) => key.endsWith('.v5') ? oldRaw : null), setItem: vi.fn(async () => undefined) };
+    const repository = createTrainingRepository(storage);
+    await expect(repository.load()).resolves.toEqual(data);
+    await repository.save(data);
+    expect(storage.setItem).toHaveBeenCalledWith('jimappka.training.v6', expect.any(String));
   });
 
   it('serializes saves so an older write cannot finish after a newer write', async () => {
@@ -121,5 +147,12 @@ describe('training repository', () => {
     await expect(repository.save(emptyState())).rejects.toThrow('disk full');
     await expect(repository.save(emptyState())).resolves.toBeUndefined();
     expect(setItem).toHaveBeenCalledTimes(2);
+  });
+  it('refuses partially damaged prior-version data rather than falling back and writing a truncated migration', async () => {
+    const raw = JSON.stringify({ version: 5, savedAt: 1, data: { ...emptyState(), logs: [{ id: 'nested-invalid', dayId: 'day', date: '2026-10-06', volumeKg: 10, durationSeconds: 60, entries: [{ exerciseId: 'bench-press', sets: [{ id: 'set', targetReps: 10, reps: 'corrupt', weightKg: 10, done: true }] }] }] } });
+    const storage: KeyValueStorage = { getItem: vi.fn(async (key) => key.endsWith('.v5') ? raw : key.endsWith('.v1') ? JSON.stringify(emptyState()) : null), setItem: vi.fn(async () => undefined) };
+    await expect(createTrainingRepository(storage).load()).rejects.toThrow('poškodené');
+    expect(storage.getItem).toHaveBeenCalledTimes(2);
+    expect(storage.setItem).not.toHaveBeenCalled();
   });
 });

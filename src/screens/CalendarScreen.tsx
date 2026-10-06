@@ -1,16 +1,19 @@
 import { Pressable, Text, View } from 'react-native';
 
-import { formatDateLabel, formatTime, getMonthLabel, todayIso } from '../data/plans';
-import { countCompletedSets } from '../domain/workouts';
+import { WorkoutHistoryCallbacks, WorkoutHistoryPanel } from '../components/WorkoutHistoryPanel';
+import { formatDateLabel, getMonthLabel, getTodayIso } from '../data/plans';
 import { styles } from '../theme/styles';
 import { CalendarDay, Exercise, WorkoutLog } from '../types';
 
-type CalendarScreenProps = {
+type CalendarScreenProps = WorkoutHistoryCallbacks & {
   exercises: Exercise[];
   weekDays: CalendarDay[];
   weekOffset: number;
   selectedDate: string;
   selectedLogs: WorkoutLog[];
+  allLogs?: WorkoutLog[];
+  initialOpenLogId?: string | null;
+  today?: string;
   onSelectDate: (iso: string) => void;
   onPreviousWeek: () => void;
   onNextWeek: () => void;
@@ -23,12 +26,18 @@ export function CalendarScreen({
   weekOffset,
   selectedDate,
   selectedLogs,
+  allLogs = selectedLogs,
+  initialOpenLogId,
+  today = getTodayIso(),
+  onUpdateLog,
+  onDeleteLog,
+  onRepeatLog,
   onSelectDate,
   onPreviousWeek,
   onNextWeek,
   onOpenPlans,
 }: CalendarScreenProps) {
-  const headerIso = weekDays[0]?.iso ?? todayIso;
+  const headerIso = weekDays[0]?.iso ?? today;
 
   return (
     <View style={styles.screen}>
@@ -59,7 +68,7 @@ export function CalendarScreen({
               styles.weekDayCard,
               index === 0 ? styles.weekDayFirst : null,
               index === weekDays.length - 1 ? styles.weekDayLast : null,
-              day.iso === todayIso ? styles.calendarToday : null,
+              day.iso === today ? styles.calendarToday : null,
               day.iso === selectedDate ? styles.calendarSelected : null,
             ]}
             onPress={() => onSelectDate(day.iso)}
@@ -94,43 +103,8 @@ export function CalendarScreen({
           </Pressable>
         </View>
       ) : (
-        <View style={styles.libraryList}>
-          {selectedLogs.map((log) => (
-            <View key={log.id} style={styles.historyLogCard}>
-              <View style={styles.rowBetween}>
-                <View style={styles.exerciseDetailTitle}>
-                  <Text style={styles.rowTitle}>{log.name}</Text>
-                  <Text style={styles.rowMuted}>{formatExerciseNames(log, exercises)}</Text>
-                </View>
-                <Text style={styles.rowValue}>{formatTime(log.durationSeconds)}</Text>
-              </View>
-              <View style={styles.metaPillRow}>
-                <View style={styles.metaPill}>
-                  <Text style={styles.metaPillText}>{countCompletedSets(log.entries)} sets</Text>
-                </View>
-                <View style={styles.metaPill}>
-                  <Text style={styles.metaPillText}>{formatVolume(log.volumeKg)}</Text>
-                </View>
-                <View style={styles.metaPill}>
-                  <Text style={styles.metaPillText}>{log.entries.length} exercises</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
+        <WorkoutHistoryPanel logs={selectedLogs} allLogs={allLogs} exercises={exercises} initialOpenLogId={initialOpenLogId} onUpdateLog={onUpdateLog} onDeleteLog={onDeleteLog} onRepeatLog={onRepeatLog} />
       )}
     </View>
   );
-}
-
-function formatExerciseNames(log: WorkoutLog, exercises: Exercise[]) {
-  const names = log.entries.map((entry) =>
-    exercises.find((exercise) => exercise.id === entry.exerciseId)?.name ?? 'Unknown exercise',
-  );
-
-  return names.join(' · ');
-}
-
-function formatVolume(value: number) {
-  return value >= 1000 ? `${(value / 1000).toFixed(1)}k kg` : `${Math.round(value)} kg`;
 }
