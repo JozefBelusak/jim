@@ -1,4 +1,4 @@
-import { CalendarDay, PlanDay, PlanExercise, TabKey, WorkoutLog, WorkoutSet } from '../types';
+import { CalendarDay, Exercise, PlanExercise, TabKey, WorkoutLog, WorkoutSet } from '../types';
 import { exerciseDb } from './exercises';
 
 export const todayIso = toLocalIsoDate(new Date());
@@ -24,47 +24,38 @@ function toIsoDate(date: Date) {
   return `${year}-${month}-${day}`;
 }
 
-export const tabs: Array<{ key: TabKey; label: string }> = [
+export const tabs: { key: TabKey; label: string }[] = [
   { key: 'today', label: 'Today' },
+  { key: 'templates', label: 'Plans' },
   { key: 'calendar', label: 'Calendar' },
   { key: 'library', label: 'Library' },
   { key: 'profile', label: 'Profile' },
 ];
 
-export function buildEmptyWorkout(iso: string): PlanDay {
-  return {
-    id: iso,
-    date: iso,
-    label: 'New workout',
-    focus: 'Custom training',
-    exercises: [],
-  };
-}
-
-export function cloneWorkout(workout: PlanDay): PlanDay {
-  return {
-    ...workout,
-    exercises: workout.exercises.map((item) => ({ ...item })),
-  };
-}
-
-export function createSets(item: PlanExercise): WorkoutSet[] {
+export function createSets(
+  item: PlanExercise,
+  options: {
+    workoutExerciseId: string;
+    setIds: string[];
+    createdAt: number;
+    previousSets?: WorkoutSet[] | null;
+  },
+): WorkoutSet[] {
   return Array.from({ length: item.sets }, (_, index) => ({
-    id: `set-${index + 1}`,
+    id: options.setIds[index],
+    workoutExerciseId: options.workoutExerciseId,
+    type: options.previousSets?.[index]?.type ?? 'normal',
     targetReps: item.reps,
-    reps: item.reps,
-    weightKg: item.weightKg,
+    reps: options.previousSets?.[index]?.reps ?? item.reps,
+    weightKg: options.previousSets?.[index]?.weightKg ?? item.weightKg,
     done: false,
     note: '',
+    createdAt: options.createdAt,
   }));
 }
 
-export function getExercise(exerciseId: string) {
-  return exerciseDb.find((exercise) => exercise.id === exerciseId) ?? exerciseDb[0];
-}
-
-export function getWorkoutForDate(schedule: Record<string, PlanDay>, iso: string) {
-  return schedule[iso] ? cloneWorkout(schedule[iso]) : buildEmptyWorkout(iso);
+export function getExercise(exerciseId: string, exercises: Exercise[] = exerciseDb) {
+  return exercises.find((exercise) => exercise.id === exerciseId) ?? exerciseDb[0];
 }
 
 export function addDays(iso: string, amount: number) {
@@ -81,7 +72,6 @@ export function startOfWeek(iso: string) {
 }
 
 export function buildWeekDays(
-  schedule: Record<string, PlanDay>,
   logs: WorkoutLog[],
   weekOffset: number,
 ): CalendarDay[] {
@@ -92,19 +82,17 @@ export function buildWeekDays(
     const date = parseIsoDate(iso);
     const weekday = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][date.getUTCDay()];
 
+    const workoutCount = logs.filter((log) => log.date === iso).length;
+
     return {
       iso,
       weekday,
       dayNumber: String(date.getUTCDate()),
       inMonth: true,
-      planDay: schedule[iso],
-      done: logs.some((log) => log.date === iso),
+      done: workoutCount > 0,
+      workoutCount,
     };
   });
-}
-
-export function isPastDate(iso: string) {
-  return iso < todayIso;
 }
 
 export function formatDateLabel(iso: string) {
@@ -133,6 +121,8 @@ export function screenTitle(tab: TabKey) {
       return 'LIBRARY';
     case 'calendar':
       return 'CALENDAR';
+    case 'templates':
+      return 'TEMPLATES';
     case 'profile':
       return 'PROFILE';
     case 'workout':

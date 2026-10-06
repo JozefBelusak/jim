@@ -1,6 +1,22 @@
-import { Exercise } from '../types';
+import {
+  Equipment,
+  Exercise,
+  ExerciseCategory,
+  MovementType,
+  MuscleGroup,
+  WeightMode,
+} from '../types';
 
-export const exerciseDb: Exercise[] = [
+type ExerciseSeed = {
+  id: string;
+  name: string;
+  muscle: string;
+  equipment: string;
+  simple: string;
+  technical: string;
+};
+
+const exerciseSeeds = [
   {
     id: 'chest-press',
     name: 'Chest press',
@@ -393,5 +409,220 @@ export const exerciseDb: Exercise[] = [
     simple: 'Walk at an incline and keep a pace you can sustain.',
     technical: 'Use incline for intensity before speed and avoid holding the rails hard.',
   },
-];
+] as const satisfies readonly ExerciseSeed[];
 
+type ExerciseSeedId = (typeof exerciseSeeds)[number]['id'];
+
+const legacyMuscleMap: Record<string, MuscleGroup> = {
+  Adductors: 'adductors',
+  Back: 'back',
+  Biceps: 'biceps',
+  Calves: 'calves',
+  Cardio: 'cardio',
+  Chest: 'chest',
+  Core: 'abs',
+  Glutes: 'glutes',
+  Hamstrings: 'hamstrings',
+  Legs: 'quads',
+  'Lower back': 'lower_back',
+  Quads: 'quads',
+  'Rear delts': 'rear_delts',
+  Shoulders: 'front_delts',
+  Triceps: 'triceps',
+};
+
+const primaryMuscleOverrides: Partial<Record<ExerciseSeedId, MuscleGroup>> = {
+  'lateral-raises': 'side_delts',
+  'lat-pulldown': 'lats',
+  'straight-arm-pulldown': 'lats',
+  'pull-up': 'lats',
+  'assisted-pull-up': 'lats',
+};
+
+const secondaryMuscleOverrides: Partial<Record<ExerciseSeedId, MuscleGroup[]>> = {
+  'chest-press': ['triceps', 'front_delts'],
+  'shoulder-press': ['triceps'],
+  'dip-machine': ['triceps', 'front_delts'],
+  'lat-pulldown': ['biceps'],
+  'seated-row': ['biceps', 'rear_delts'],
+  'chest-supported-row': ['biceps', 'rear_delts'],
+  squat: ['glutes', 'hamstrings', 'lower_back'],
+  'leg-press': ['glutes', 'hamstrings'],
+  rdl: ['glutes', 'lower_back'],
+  lunges: ['glutes', 'hamstrings'],
+  hyperextensions: ['glutes', 'hamstrings'],
+  'bench-press': ['triceps', 'front_delts'],
+  'incline-press': ['triceps', 'front_delts'],
+  'pull-up': ['biceps'],
+  'assisted-pull-up': ['biceps'],
+  'machine-row': ['biceps', 'rear_delts'],
+  'barbell-row': ['biceps', 'rear_delts', 'lower_back'],
+  't-bar-row': ['biceps', 'rear_delts'],
+  'straight-arm-pulldown': ['triceps'],
+  'close-grip-bench': ['chest', 'front_delts'],
+  'hack-squat': ['glutes', 'hamstrings'],
+  'smith-squat': ['glutes', 'hamstrings'],
+  'bulgarian-split-squat': ['glutes', 'hamstrings'],
+  'hip-thrust': ['hamstrings'],
+  'glute-bridge': ['hamstrings'],
+};
+
+const compoundExerciseIds = new Set<ExerciseSeedId>([
+  'chest-press',
+  'shoulder-press',
+  'dip-machine',
+  'lat-pulldown',
+  'seated-row',
+  'chest-supported-row',
+  'squat',
+  'leg-press',
+  'rdl',
+  'lunges',
+  'bench-press',
+  'incline-press',
+  'pull-up',
+  'assisted-pull-up',
+  'machine-row',
+  'barbell-row',
+  't-bar-row',
+  'close-grip-bench',
+  'hack-squat',
+  'smith-squat',
+  'bulgarian-split-squat',
+  'hip-thrust',
+  'glute-bridge',
+]);
+
+const movementOverrides: Partial<Record<ExerciseSeedId, MovementType>> = {
+  squat: 'squat',
+  'leg-press': 'squat',
+  'leg-extension': 'squat',
+  rdl: 'hinge',
+  lunges: 'lunge',
+  'calf-raises': 'calf_raise',
+  plank: 'isometric',
+  hyperextensions: 'hinge',
+  'leg-raise': 'spinal_flexion',
+  'hack-squat': 'squat',
+  'smith-squat': 'squat',
+  'bulgarian-split-squat': 'lunge',
+  'hip-thrust': 'hinge',
+  'glute-bridge': 'hinge',
+  'adductor-machine': 'squat',
+  'abductor-machine': 'squat',
+  'seated-calf-raise': 'calf_raise',
+  'cable-crunch': 'spinal_flexion',
+  crunch: 'spinal_flexion',
+  'russian-twist': 'rotation',
+  'treadmill-walk': 'cardio',
+};
+
+const bodyweightPlusExerciseIds = new Set<ExerciseSeedId>([
+  'lunges',
+  'pull-up',
+  'glute-bridge',
+  'russian-twist',
+]);
+
+function normalizePrimaryMuscle(seed: ExerciseSeed): MuscleGroup {
+  const legacyPrimaryMuscle = seed.muscle.split('/')[0].trim();
+  return primaryMuscleOverrides[seed.id as ExerciseSeedId] ?? legacyMuscleMap[legacyPrimaryMuscle];
+}
+
+function normalizeSecondaryMuscles(seed: ExerciseSeed): MuscleGroup[] {
+  const override = secondaryMuscleOverrides[seed.id as ExerciseSeedId];
+  if (override) {
+    return override;
+  }
+
+  return seed.muscle
+    .split('/')
+    .slice(1)
+    .map((muscle) => legacyMuscleMap[muscle.trim()])
+    .filter((muscle): muscle is MuscleGroup => Boolean(muscle));
+}
+
+function normalizeEquipment(equipment: string): Equipment {
+  const primaryEquipment = equipment.split('/')[0].trim();
+  const equipmentMap: Record<string, Equipment> = {
+    Bar: 'pull_up_bar',
+    Barbell: 'barbell',
+    Bench: 'other',
+    Bodyweight: 'bodyweight',
+    Cable: 'cable',
+    Dumbbells: 'dumbbell',
+    'EZ bar': 'ez_bar',
+    Machine: 'machine',
+    Rack: 'barbell',
+    'Roman chair': 'other',
+    'Smith machine': 'smith_machine',
+    Treadmill: 'treadmill',
+  };
+
+  return equipmentMap[primaryEquipment] ?? 'other';
+}
+
+function getCategory(seed: ExerciseSeed): ExerciseCategory {
+  if (seed.id === 'treadmill-walk') {
+    return 'cardio';
+  }
+
+  if (legacyMuscleMap[seed.muscle.split('/')[0].trim()] === 'abs') {
+    return 'core';
+  }
+
+  return compoundExerciseIds.has(seed.id as ExerciseSeedId) ? 'compound' : 'isolation';
+}
+
+function getMovementType(seed: ExerciseSeed, primaryMuscle: MuscleGroup): MovementType {
+  const override = movementOverrides[seed.id as ExerciseSeedId];
+  if (override) {
+    return override;
+  }
+
+  if (primaryMuscle === 'back' || primaryMuscle === 'lats' || primaryMuscle === 'biceps' || primaryMuscle === 'rear_delts') {
+    return 'pull';
+  }
+
+  if (primaryMuscle === 'quads') {
+    return 'squat';
+  }
+
+  if (primaryMuscle === 'hamstrings' || primaryMuscle === 'glutes' || primaryMuscle === 'lower_back') {
+    return 'hinge';
+  }
+
+  if (primaryMuscle === 'calves') {
+    return 'calf_raise';
+  }
+
+  return 'push';
+}
+
+function getWeightMode(seed: ExerciseSeed): WeightMode {
+  if (bodyweightPlusExerciseIds.has(seed.id as ExerciseSeedId)) {
+    return 'bodyweight_plus';
+  }
+
+  return seed.equipment.startsWith('Bodyweight') || seed.id === 'plank' || seed.id === 'crunch'
+    ? 'bodyweight'
+    : 'external';
+}
+
+export const exerciseDb: Exercise[] = exerciseSeeds.map((seed) => {
+  const primaryMuscle = normalizePrimaryMuscle(seed);
+
+  return {
+    id: seed.id,
+    name: seed.name,
+    primaryMuscle,
+    secondaryMuscles: normalizeSecondaryMuscles(seed),
+    equipment: normalizeEquipment(seed.equipment),
+    category: getCategory(seed),
+    movementType: getMovementType(seed, primaryMuscle),
+    weightMode: getWeightMode(seed),
+    instructions: seed.simple,
+    technicalInstructions: seed.technical,
+    isCustom: false,
+  };
+});

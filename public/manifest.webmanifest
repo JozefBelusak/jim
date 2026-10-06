@@ -1,0 +1,16 @@
+{
+  "id": "/",
+  "name": "Jimrat",
+  "short_name": "Jimrat",
+  "description": "Tréningy, cviky a história cvičenia na jednom mieste.",
+  "lang": "sk",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#1B1B2A",
+  "theme_color": "#1B1B2A",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

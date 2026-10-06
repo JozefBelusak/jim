@@ -19,7 +19,11 @@
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "output": "single",
+      "name": "Jimrat",
+      "shortName": "Jimrat",
+      "favicon": "./hamsterlogo.png"
     },
     "extra": {
       "eas": {
