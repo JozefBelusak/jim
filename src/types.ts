@@ -121,6 +121,7 @@ export type WorkoutTemplate = {
   createdAt: number;
   updatedAt: number;
   archived?: boolean;
+  starterKey?: string;
 };
 
 export type WorkoutSet = {

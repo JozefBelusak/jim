@@ -47,7 +47,7 @@ export function ExerciseSearch({
     <View style={styles.card}>
       <View style={styles.rowBetween}>
         <Text style={styles.cardTitle}>{title}</Text>
-        <Pressable style={styles.smallButton} onPress={() => setFiltersOpen(!filtersOpen)}>
+        <Pressable style={styles.smallButton} accessibilityRole="button" accessibilityState={{ expanded: filtersOpen }} accessibilityLabel="Exercise filters" onPress={() => setFiltersOpen(!filtersOpen)}>
           <Text style={styles.smallButtonText}>{filtersOpen ? 'Hide filters' : hasFilters ? 'Filters active' : 'Filters'}</Text>
         </Pressable>
       </View>
@@ -82,7 +82,7 @@ export function ExerciseSearch({
       <Text style={styles.rowMuted}>{visible.length} matching exercises</Text>
       <View style={[styles.libraryList, { marginTop: 10 }]}>
         {visible.slice(0, limit).map((exercise) => (
-          <Pressable key={exercise.id} style={[styles.libraryRow, selectedId === exercise.id ? styles.libraryRowActive : null]} onPress={() => onSelect(exercise.id)}>
+          <Pressable key={exercise.id} style={[styles.libraryRow, selectedId === exercise.id ? styles.libraryRowActive : null]} accessibilityRole="button" accessibilityLabel={`${actionLabel ?? 'View'} ${exercise.name}`} onPress={() => onSelect(exercise.id)}>
             <View style={styles.exerciseBody}>
               <Text style={styles.rowTitle}>{exercise.name}</Text>
               <Text style={styles.rowMuted}>{formatMuscleGroup(exercise.primaryMuscle)} · {formatEquipment(exercise.equipment)}</Text>

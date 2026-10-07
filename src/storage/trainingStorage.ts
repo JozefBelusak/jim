@@ -216,6 +216,7 @@ function isWorkoutTemplate(value: unknown): value is WorkoutTemplate {
     isString(value.userId) &&
     isString(value.name) &&
     isOptionalString(value.description) &&
+    isOptionalString(value.starterKey) &&
     Array.isArray(value.exercises) &&
     value.exercises.every(isTemplateExercise) &&
     isFiniteNumber(value.createdAt) &&

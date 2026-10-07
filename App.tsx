@@ -6,10 +6,11 @@ import { ConfirmationDialog } from './src/components/ConfirmationDialog';
 import { registerOfflineSupport } from './src/web/offline';
 import { BackupPanel } from './src/components/BackupPanel';
 import { MachineMemoryPanel } from './src/components/MachineMemoryPanel';
+import { SavingIndicator } from './src/components/SavingIndicator';
 import { BackgroundLines } from './src/components/ui';
 import { exerciseDb } from './src/data/exercises';
 import { addDays, buildWeekDays, createSets, formatTime, getExercise, getTodayIso, screenTitle, tabs } from './src/data/plans';
-import { createStarterTemplates } from './src/data/starterTemplates';
+import { addStarterTemplate, identifyStarterTemplate } from './src/data/starterTemplates';
 import { CustomExerciseInput, createCustomExercise, updateCustomExercise } from './src/domain/exercises';
 import { linkWorkoutMachine, saveMachineMemory } from './src/domain/machineMemory';
 import { getEntryMetric, getExerciseMetric } from './src/domain/metrics';
@@ -32,7 +33,7 @@ import { TemplatesScreen } from './src/screens/TemplatesScreen';
 import { WorkoutRestDock, WorkoutScreen } from './src/screens/WorkoutScreen';
 import { TrainingState } from './src/storage/trainingStorage';
 import { useTrainingState } from './src/storage/useTrainingState';
-import { colors, styles } from './src/theme/styles';
+import { styles } from './src/theme/styles';
 import { ActiveWorkout, Level, PlanDay, TabKey, TemplateExercise, WorkoutLog, WorkoutTemplate } from './src/types';
 
 const localUserId = 'local-user';
@@ -117,10 +118,12 @@ export default function App() {
   function startEmpty() { beginWorkout({ id: today, date: today, label: 'Voľný tréning', focus: '', exercises: [] }); }
   function startStarter(index: number) {
     if (activeWorkout) { setTab('workout'); return; }
-    const template = createStarterTemplates(localUserId, Date.now(), createLocalId)[index];
-    if (!template) return;
-    setState((current) => ({ ...current, templates: [...current.templates, template] }));
-    startTemplate(template);
+    startTemplate(addStarter(index));
+  }
+  function addStarter(index: number) {
+    const result = addStarterTemplate(templates, localUserId, index, Date.now(), createLocalId);
+    setState((current) => ({ ...current, templates: result.templates }));
+    return result.template;
   }
 
   function saveWorkout() {
@@ -190,7 +193,7 @@ export default function App() {
     return duplicate;
   }
   function changeTemplate(id: string, change: (template: WorkoutTemplate) => WorkoutTemplate) {
-    setState((current) => ({ ...current, templates: current.templates.map((template) => template.id === id ? change(template) : template) }));
+    setState((current) => ({ ...current, templates: current.templates.map((template) => template.id === id ? change(identifyStarterTemplate(template)) : template) }));
   }
   function deleteTemplate(id: string) {
     const deleted = templates.find((template) => template.id === id);
@@ -215,10 +218,7 @@ export default function App() {
         <View style={styles.headerClock}><Text style={styles.badgeLabel}>{activeWorkout ? 'Trvanie' : 'Tréningy'}</Text><Text style={styles.headerClockText}>{activeWorkout ? formatTime(getWorkoutElapsedSeconds(activeWorkout, nowTick)) : logs.length}</Text></View>
       </View>
       <View style={styles.savingStatus}>
-        <View style={styles.savingStatusRow}>
-          <View style={[styles.statusDot, { backgroundColor: status === 'error' ? colors.pink : status === 'saving' ? colors.muted : colors.mint }]} />
-          <Text accessibilityLiveRegion="polite" style={[styles.savingStatusText, status === 'error' ? { color: colors.pink } : null]}>{status === 'saving' ? 'Ukladám…' : status === 'error' ? `Ukladanie zlyhalo: ${error}` : 'Uložené v tomto zariadení'}</Text>
-        </View>
+        <SavingIndicator status={status} error={error} />
         {status === 'error' ? <View style={styles.chipRow}>
           <Pressable style={styles.smallButton} onPress={retrySave}><Text style={styles.smallButtonText}>Zopakovať uloženie</Text></Pressable>
           <Pressable style={styles.smallButton} onPress={() => setTab('profile')}><Text style={styles.smallButtonText}>Exportovať zálohu</Text></Pressable>
@@ -239,7 +239,7 @@ export default function App() {
           onStartTemplate={startTemplate} onStartEmpty={startEmpty} onStartStarter={startStarter} onResume={() => setTab('workout')} onCancelWorkout={() => setConfirmCancel(true)} onOpenPlans={() => setTab('templates')}
           onOpenLog={(id) => { const log = logs.find((item) => item.id === id); if (log) { setSelectedDate(log.date); setInitialOpenLogId(id); setTab('calendar'); } }} /> : null}
         {tab === 'library' ? <LibraryScreen exercises={exercises} selectedExercise={selectedExercise} level={level} logs={logs} userId={localUserId} machineMemories={machineMemories} onSelectExercise={setSelectedExerciseId} onLevel={setLevel} onCreateCustomExercise={addCustom} onUpdateCustomExercise={editCustom} /> : null}
-        {tab === 'templates' ? <TemplatesScreen templates={templates} exercises={exercises} onCreate={addTemplate} onDuplicate={duplicateTemplate} onStart={startTemplate}
+        {tab === 'templates' ? <TemplatesScreen templates={templates} exercises={exercises} userId={localUserId} savingStatus={status} savingError={error} onRetrySave={retrySave} onCreate={addTemplate} onDuplicate={duplicateTemplate} onStart={startTemplate}
           onUpdateDetails={(id, patch) => changeTemplate(id, (template) => updateWorkoutTemplateDetails(template, patch, Date.now()))}
           onAddExercise={(id, exerciseId) => changeTemplate(id, (template) => addExerciseToTemplate(template, exerciseId, createLocalId('exercise'), Date.now(), getExerciseMetric(getExercise(exerciseId, exercises))))}
           onUpdateExercise={(id, exerciseId, patch: Partial<Omit<TemplateExercise, 'id' | 'exerciseId' | 'order'>>) => changeTemplate(id, (template) => updateTemplateExercise(template, exerciseId, patch, Date.now()))}
@@ -247,7 +247,7 @@ export default function App() {
           onMoveExercise={(id, exerciseId, direction) => changeTemplate(id, (template) => moveExerciseInTemplate(template, exerciseId, direction, Date.now()))}
           onArchive={(id, archived) => changeTemplate(id, (template) => setTemplateArchived(template, archived, Date.now()))} onDelete={deleteTemplate}
           onMoveTemplate={(id, direction) => setState((current) => ({ ...current, templates: moveTemplate(current.templates, id, direction) }))}
-          onAddStarters={() => setState((current) => ({ ...current, templates: [...current.templates, ...createStarterTemplates(localUserId, Date.now(), createLocalId)] }))} /> : null}
+          onAddStarter={addStarter} /> : null}
         {tab === 'calendar' ? <CalendarScreen exercises={exercises} weekDays={weekDays} weekOffset={weekOffset} selectedDate={selectedDate} selectedLogs={selectedLogs} allLogs={logs} today={today} initialOpenLogId={initialOpenLogId}
           onSelectDate={setSelectedDate} onPreviousWeek={() => { setWeekOffset(weekOffset - 1); setSelectedDate(addDays(selectedDate, -7)); }} onNextWeek={() => { setWeekOffset(weekOffset + 1); setSelectedDate(addDays(selectedDate, 7)); }}
           onOpenPlans={() => setTab('templates')} onUpdateLog={updateLog} onDeleteLog={deleteLog} onRepeatLog={repeatWorkout} /> : null}

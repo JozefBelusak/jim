@@ -161,6 +161,7 @@ export function duplicateWorkoutTemplate(
     id: identity.id,
     userId: identity.userId,
     name: `${template.name} Copy`,
+    starterKey: undefined,
     archived: false,
     exercises: template.exercises.map((item, order) => ({
       ...item,

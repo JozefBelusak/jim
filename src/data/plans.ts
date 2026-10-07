@@ -132,7 +132,7 @@ export function screenTitle(tab: TabKey) {
     case 'calendar':
       return 'Calendar';
     case 'templates':
-      return 'Templates';
+      return 'Plans';
     case 'profile':
       return 'Profile';
     case 'workout':
