@@ -116,8 +116,8 @@ export function TemplatesScreen({
               <Pressable style={styles.smallButton} onPress={() => setDeleteTemplateId(template.id)}><Text style={styles.dangerOutlineText}>Delete</Text></Pressable>
               {!showArchived && onMoveTemplate ? (
                 <>
-                  <Pressable disabled={index === 0} style={[styles.smallButton, index === 0 ? styles.disabledButton : null]} onPress={() => onMoveTemplate(template.id, -1)}><Text style={styles.smallButtonText}>↑ Rotation</Text></Pressable>
-                  <Pressable disabled={index === visibleTemplates.length - 1} style={[styles.smallButton, index === visibleTemplates.length - 1 ? styles.disabledButton : null]} onPress={() => onMoveTemplate(template.id, 1)}><Text style={styles.smallButtonText}>↓ Rotation</Text></Pressable>
+                  <Pressable disabled={index === 0} style={[styles.smallButton, index === 0 ? styles.disabledButton : null]} onPress={() => onMoveTemplate(template.id, -1)} accessibilityRole="button" accessibilityLabel={`Move ${template.name} up`} accessibilityHint="Move this plan earlier in the workout rotation"><Text style={styles.smallButtonText}>Move up</Text></Pressable>
+                  <Pressable disabled={index === visibleTemplates.length - 1} style={[styles.smallButton, index === visibleTemplates.length - 1 ? styles.disabledButton : null]} onPress={() => onMoveTemplate(template.id, 1)} accessibilityRole="button" accessibilityLabel={`Move ${template.name} down`} accessibilityHint="Move this plan later in the workout rotation"><Text style={styles.smallButtonText}>Move down</Text></Pressable>
                 </>
               ) : null}
             </View>

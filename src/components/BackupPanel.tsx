@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { Platform, Pressable, Text, TextInput, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { parseTrainingBackup, serializeTrainingBackup } from '../storage/backup';
 import { TrainingState } from '../storage/trainingStorage';
-import { styles } from '../theme/styles';
+import { colors, styles } from '../theme/styles';
 
 type Props = { state: TrainingState; onImport: (state: TrainingState) => Promise<void>; allowExport?: boolean };
 
@@ -69,11 +69,13 @@ export function BackupPanel({ state, onImport, allowExport = true }: Props) {
   return <View style={styles.card}>
     <Text style={styles.cardTitle}>Záloha a prenos dát</Text>
     <Text style={styles.compactText}>JSON obsahuje históriu, rozbehnutý tréning, plány, vlastné cviky aj pamäť strojov.</Text>
-    {allowExport ? <Pressable style={styles.secondaryFull} onPress={exportFile}><Text style={styles.secondaryText}>Stiahnuť JSON zálohu</Text></Pressable> : null}
-    <Pressable style={styles.secondaryFull} onPress={chooseFile}><Text style={styles.secondaryText}>Vybrať JSON na import</Text></Pressable>
-    <Pressable style={styles.smallButton} onPress={() => setShowText(!showText)}><Text style={styles.smallButtonText}>Import cez text</Text></Pressable>
+    <View style={local.actions}>
+      {allowExport ? <Pressable style={[styles.secondaryFull, local.button]} onPress={exportFile} accessibilityRole="button"><Text style={styles.secondaryText}>Stiahnuť JSON zálohu</Text></Pressable> : null}
+      <Pressable style={[styles.secondaryFull, local.button]} onPress={chooseFile} accessibilityRole="button"><Text style={styles.secondaryText}>Vybrať JSON na import</Text></Pressable>
+      <Pressable style={local.textImportButton} onPress={() => setShowText(!showText)} accessibilityRole="button" accessibilityState={{ expanded: showText }}><Text style={styles.secondaryText}>{showText ? 'Skryť import cez text' : 'Import cez text'}</Text></Pressable>
+    </View>
     {showText ? <View>
-      <TextInput value={raw} onChangeText={(text) => { setRaw(text); setCandidate(null); }} style={styles.noteInput} multiline placeholder="Vlož obsah JSON zálohy" placeholderTextColor="#AAAAC4" accessibilityLabel="JSON záloha" />
+      <TextInput value={raw} onChangeText={(text) => { setRaw(text); setCandidate(null); }} style={styles.noteInput} multiline placeholder="Vlož obsah JSON zálohy" placeholderTextColor={colors.muted} accessibilityLabel="JSON záloha" />
       <Pressable style={styles.secondaryFull} onPress={() => validate(raw)}><Text style={styles.secondaryText}>Overiť zálohu</Text></Pressable>
     </View> : null}
     {candidate ? <View>
@@ -84,3 +86,9 @@ export function BackupPanel({ state, onImport, allowExport = true }: Props) {
     {message ? <Text accessibilityLiveRegion="polite" style={styles.compactText}>{message}</Text> : null}
   </View>;
 }
+
+const local = StyleSheet.create({
+  actions: { gap: 12, marginTop: 14 },
+  button: { marginTop: 0 },
+  textImportButton: { minHeight: 44, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 12, borderRadius: 9, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface },
+});

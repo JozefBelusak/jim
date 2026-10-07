@@ -140,7 +140,7 @@ export function WorkoutScreen({ workout, exercises, now, previousSets, personalR
         {!summary ? <Pressable style={local.toolbarButton} onPress={() => onChange(workout.pausedAt === undefined ? pauseWorkout(workout, now) : resumeWorkout(workout, now))} accessibilityLabel={workout.pausedAt === undefined ? 'Pause workout' : 'Resume workout'}>
           <Text style={local.actionText}>{workout.pausedAt === undefined ? 'Pause' : 'Resume'}</Text>
         </Pressable> : null}
-        <Pressable style={local.moreButton} onPress={() => setSheet('workout')} accessibilityLabel="Workout options"><Text style={local.moreText}>⋯</Text></Pressable>
+        <MenuButton label="Workout settings" hint="Time · notes" accessibilityLabel="Workout options" onPress={() => setSheet('workout')} />
       </View>
 
       <View style={local.workoutIdentity}>
@@ -171,7 +171,7 @@ export function WorkoutScreen({ workout, exercises, now, previousSets, personalR
             <Text style={styles.cardTitle}>{exercise.name}</Text>
             <Text style={local.bodyMuted}>{metricLabels[metric]}{entry.supersetGroupId ? ' · superset' : ''}</Text>
           </View>
-          <Pressable style={local.moreButton} onPress={() => setSheet('exercise')} accessibilityLabel="Exercise options"><Text style={local.moreText}>⋯</Text></Pressable>
+          <MenuButton label="Exercise tools" hint={machineMemoryPanel ? 'Swap · skip · gym' : 'Swap · skip · rest'} accessibilityLabel="Exercise options" onPress={() => setSheet('exercise')} />
         </View>
 
         {workout.pausedAt !== undefined && !summary ? <Text accessibilityLiveRegion="polite" style={local.statusHint}>Workout paused · resume to complete your next set.</Text> : null}
@@ -199,7 +199,7 @@ export function WorkoutScreen({ workout, exercises, now, previousSets, personalR
               <Text style={local.actionText}>+ Add set</Text>
             </Pressable>
             <Pressable style={local.footerButton} onPress={() => { setSelectedSetId(editableSet?.id ?? null); setSheet('set'); }} accessibilityLabel="Set options">
-              <Text style={local.bodyMuted}>Set options</Text>
+              <Text style={local.actionText}>Edit set</Text>
             </Pressable>
           </View>
         </View>
@@ -207,7 +207,7 @@ export function WorkoutScreen({ workout, exercises, now, previousSets, personalR
 
         <View style={local.exerciseNavigation}>
           <Pressable style={[local.navigationButton, visibleIndex === 0 ? local.disabled : null]} disabled={visibleIndex === 0} onPress={() => onChange(navigateToExercise(workout, workout.entries[visibleIndex - 1].id, undefined, now))} accessibilityLabel="Previous exercise"><Text style={local.navigationArrow}>‹</Text></Pressable>
-          <Pressable style={local.exerciseListButton} onPress={() => { setPicker(null); setSheet('exercises'); }} accessibilityLabel="Workout exercise list"><Text style={local.actionText}>Exercises · {workout.entries.length}</Text></Pressable>
+          <Pressable style={local.exerciseListButton} onPress={() => { setPicker(null); setSheet('exercises'); }} accessibilityRole="button" accessibilityLabel="Workout exercise list" accessibilityHint="Add, reorder or jump to an exercise"><Text style={local.actionText}>Exercises · {workout.entries.length}</Text><Text style={local.menuHint}>Add · reorder</Text></Pressable>
           <Pressable style={[local.navigationButton, visibleIndex >= workout.entries.length - 1 ? local.disabled : null]} disabled={visibleIndex >= workout.entries.length - 1} onPress={() => onChange(navigateToExercise(workout, workout.entries[visibleIndex + 1].id, undefined, now))} accessibilityLabel="Next exercise"><Text style={local.navigationArrow}>›</Text></Pressable>
         </View>
 
@@ -303,15 +303,15 @@ export function WorkoutScreen({ workout, exercises, now, previousSets, personalR
         </DisclosureSection>
         <DisclosureSection title="Correct workout time" summary={`Elapsed ${formatTime(elapsed)}`}>
           <Text style={local.bodyText}>Set the actual duration if you forgot to pause.</Text>
-          <View style={local.actions}>
-            <TextInput value={durationMinutes} onChangeText={setDurationMinutes} keyboardType="decimal-pad" placeholder={`${Math.round(elapsed / 60)} min`} placeholderTextColor={colors.muted} style={[styles.setMetricInput, local.timeInput]} accessibilityLabel="Actual workout duration in minutes" />
-            <Action label="Set duration" onPress={() => { const minutes = Number(durationMinutes.replace(',', '.')); if (durationMinutes.trim() && Number.isFinite(minutes) && minutes >= 0) { onChange(adjustWorkoutDuration(workout, minutes * 60, now)); setDurationMinutes(''); } }} />
+          <View style={local.timeForm}>
+            <View style={local.timeField}><Text style={local.sectionLabel}>Actual duration</Text><View style={local.timeInputRow}><TextInput value={durationMinutes} onChangeText={setDurationMinutes} keyboardType="decimal-pad" placeholder={`${Math.round(elapsed / 60)}`} placeholderTextColor={colors.muted} style={[styles.setMetricInput, local.timeInput]} accessibilityLabel="Actual workout duration in minutes" /><Text style={local.bodyMuted}>minutes</Text></View></View>
+            <Action label="Set duration" fullWidth onPress={() => { const minutes = Number(durationMinutes.replace(',', '.')); if (durationMinutes.trim() && Number.isFinite(minutes) && minutes >= 0) { onChange(adjustWorkoutDuration(workout, minutes * 60, now)); setDurationMinutes(''); } }} />
           </View>
         </DisclosureSection>
         {!summary ? <DisclosureSection title="I need to leave in…" summary={workout.deadlineAt ? `Leave in ${formatSignedTime(Math.ceil((workout.deadlineAt - now) / 1000))}` : 'Fit your remaining sets into the time you have'}>
-          <View style={local.actions}>
-            <View style={local.deadlineField}><Text style={local.sectionLabel}>Minutes remaining</Text><TextInput value={leaveMinutes} onChangeText={(value) => { setLeaveMinutes(value); setProposal(null); }} keyboardType="number-pad" style={[styles.setMetricInput, local.timeInput]} accessibilityLabel="Minutes remaining before leaving" /></View>
-            <Action label="Suggest shorter workout" onPress={() => { const minutes = Number(leaveMinutes.replace(',', '.')); if (leaveMinutes.trim() && Number.isFinite(minutes) && minutes >= 0) setProposal(suggestWorkoutShortening(workout, minutes, now)); }} />
+          <View style={local.timeForm}>
+            <View style={local.timeField}><Text style={local.sectionLabel}>Time remaining</Text><View style={local.timeInputRow}><TextInput value={leaveMinutes} onChangeText={(value) => { setLeaveMinutes(value); setProposal(null); }} keyboardType="number-pad" style={[styles.setMetricInput, local.timeInput]} accessibilityLabel="Minutes remaining before leaving" /><Text style={local.bodyMuted}>minutes</Text></View></View>
+            <Action label="Suggest shorter workout" fullWidth onPress={() => { const minutes = Number(leaveMinutes.replace(',', '.')); if (leaveMinutes.trim() && Number.isFinite(minutes) && minutes >= 0) setProposal(suggestWorkoutShortening(workout, minutes, now)); }} />
           </View>
           {proposal ? <View style={local.proposal}>
             <Text style={local.bodyText}>Keep {proposal.retainedPendingSets} remaining sets. Estimated {Math.ceil(proposal.estimatedSeconds / 60)} min instead of {Math.ceil(proposal.originalEstimatedSeconds / 60)} min.</Text>
@@ -348,7 +348,7 @@ function SetLogRow({ set, index, metric, previousSet, active, canComplete, onUpd
 }) {
   const durationMetric = metric === 'duration' || metric === 'distance_duration';
   return <View style={[styles.setTableRow, active ? styles.setTableRowActive : null]}>
-    <Pressable style={[styles.setNumberCell, local.setNumber]} onPress={onSelect} accessibilityLabel={`Select set ${index + 1}`} accessibilityHint="Open set type, effort, notes and removal options"><Text style={styles.setNumberText}>{formatSetNumber(set.type, index)}</Text><Text style={local.setOptionsHint}>⋯</Text></Pressable>
+    <Pressable style={[styles.setNumberCell, local.setNumber]} onPress={onSelect} accessibilityRole="button" accessibilityLabel={`Select set ${index + 1}`} accessibilityHint="Open set type, effort, notes and removal options"><Text style={styles.setNumberText}>{formatSetNumber(set.type, index)}</Text><Text style={local.setOptionsHint}>Edit</Text></Pressable>
     <Text style={[styles.setPreviousText, styles.setPreviousCell]}>{previousSet ? formatSetPerformance(previousSet, metric) : '—'}</Text>
     <View style={styles.setMetricCell}>
       <SetMetricInput label={`${durationMetric ? 'Duration' : metric === 'reps' ? 'Reps' : metric === 'assisted_reps' ? 'Assistance' : 'Weight'} set ${index + 1}`} value={durationMetric ? set.durationSeconds ?? 0 : metric === 'reps' ? set.reps : set.weightKg} integer={durationMetric || metric === 'reps'} onCommit={(value) => onUpdate(durationMetric ? { durationSeconds: value } : metric === 'reps' ? { reps: value } : { weightKg: value })} />
@@ -393,8 +393,11 @@ function OptionalMetric({ label, value, integer = false, minimum = 0, maximum = 
     }} /></View>;
 }
 
-function Action({ label, onPress, disabled = false, danger = false, primary = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean; primary?: boolean }) {
-  return <Pressable style={[local.action, danger ? local.dangerAction : null, primary ? local.primaryAction : null, disabled ? local.disabled : null]} onPress={onPress} disabled={disabled} accessibilityLabel={label}><Text style={[local.actionText, danger ? local.dangerText : null, primary ? local.primaryActionText : null]}>{label}</Text></Pressable>;
+function MenuButton({ label, hint, accessibilityLabel, onPress }: { label: string; hint: string; accessibilityLabel: string; onPress: () => void }) {
+  return <Pressable style={local.menuButton} onPress={onPress} accessibilityRole="button" accessibilityLabel={accessibilityLabel} accessibilityHint={hint}><Text style={local.actionText}>{label}</Text><Text style={local.menuHint}>{hint}</Text></Pressable>;
+}
+function Action({ label, onPress, disabled = false, danger = false, primary = false, fullWidth = false }: { label: string; onPress: () => void; disabled?: boolean; danger?: boolean; primary?: boolean; fullWidth?: boolean }) {
+  return <Pressable style={[local.action, fullWidth ? local.fullWidthAction : null, danger ? local.dangerAction : null, primary ? local.primaryAction : null, disabled ? local.disabled : null]} onPress={onPress} disabled={disabled} accessibilityRole="button" accessibilityLabel={label}><Text style={[local.actionText, danger ? local.dangerText : null, primary ? local.primaryActionText : null]}>{label}</Text></Pressable>;
 }
 function DockButton({ label, accessibilityLabel, onPress }: { label: string; accessibilityLabel: string; onPress: () => void }) {
   return <Pressable style={[styles.restDockButton, local.dockButton]} onPress={onPress} accessibilityLabel={accessibilityLabel}><Text style={styles.restDockButtonText}>{label}</Text></Pressable>;
@@ -419,15 +422,15 @@ const local = StyleSheet.create({
   toolbar: { flexDirection: 'row', alignItems: 'center', gap: 4, minHeight: 44 },
   toolbarButton: { minHeight: 44, paddingHorizontal: 8, justifyContent: 'center', alignItems: 'center' },
   toolbarSpacer: { flex: 1 },
-  moreButton: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 9, backgroundColor: colors.surface },
-  moreText: { color: colors.text, fontSize: 25, lineHeight: 27, fontWeight: '700' },
+  menuButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', gap: 2, paddingHorizontal: 10, paddingVertical: 5, borderWidth: 1, borderColor: colors.line, borderRadius: 9, backgroundColor: colors.surface },
+  menuHint: { color: colors.muted, fontSize: 10, lineHeight: 14 },
   workoutIdentity: { gap: 3 },
   workoutName: { color: colors.muted, fontSize: 13, fontWeight: '600' },
   progressText: { color: colors.muted, fontSize: 12 },
   summaryCard: { gap: 8 },
   emptyCard: { gap: 10 },
   exerciseHeading: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingTop: 4 },
-  headingText: { flex: 1, gap: 4 },
+  headingText: { flex: 1, minWidth: 0, gap: 4 },
   sectionLabel: { color: colors.muted, fontSize: 12, fontWeight: '600' },
   bodyText: { color: colors.text, fontSize: 14, lineHeight: 21 },
   bodyMuted: { color: colors.muted, fontSize: 12, lineHeight: 18 },
@@ -438,7 +441,7 @@ const local = StyleSheet.create({
   tableFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 8 },
   footerButton: { minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 },
   setNumber: { minHeight: 44 },
-  setOptionsHint: { fontSize: 10, lineHeight: 9, color: colors.muted },
+  setOptionsHint: { fontSize: 10, lineHeight: 14, color: colors.muted },
   metricInput: { minHeight: 44 },
   doneTouch: { minHeight: 44, height: 44 },
   activeDone: { backgroundColor: colors.mint, borderColor: colors.mint },
@@ -447,10 +450,11 @@ const local = StyleSheet.create({
   exerciseNavigation: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   navigationButton: { minHeight: 44, width: 44, backgroundColor: colors.surface, borderColor: colors.line, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center' },
   navigationArrow: { color: colors.text, fontSize: 26, lineHeight: 30 },
-  exerciseListButton: { flex: 1, minHeight: 44, backgroundColor: colors.surface, borderColor: colors.line, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
+  exerciseListButton: { flex: 1, minHeight: 44, gap: 2, backgroundColor: colors.surface, borderColor: colors.line, borderWidth: 1, borderRadius: 9, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 10 },
   finishButton: { marginTop: 2, minHeight: 46 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'flex-end' },
   action: { alignSelf: 'flex-start', minHeight: 44, borderRadius: 9, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface, paddingVertical: 10, paddingHorizontal: 13, justifyContent: 'center', alignItems: 'center' },
+  fullWidthAction: { alignSelf: 'stretch' },
   actionText: { color: colors.text, fontSize: 13, fontWeight: '600' },
   dangerAction: { borderColor: colors.line, marginTop: 8 },
   dangerText: { color: colors.pink },
@@ -463,7 +467,9 @@ const local = StyleSheet.create({
   selected: { color: colors.mint },
   optionalMetric: { flex: 1, minWidth: 100, gap: 6 },
   timeInput: { width: 90, minHeight: 44 },
-  deadlineField: { gap: 6 },
+  timeForm: { gap: 12 },
+  timeField: { gap: 6 },
+  timeInputRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   proposal: { gap: 10, paddingTop: 10 },
   restDock: { minHeight: 68, padding: 8, gap: 8, left: 12, right: 12, bottom: 12, borderColor: colors.line },
   restTimer: { minWidth: 55, paddingRight: 8 },
