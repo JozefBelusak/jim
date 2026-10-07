@@ -135,8 +135,21 @@ async function run() {
       await page.getByLabel('Plan name', {exact: true}).fill('Retry saved plan');
       await dialog.getByText(/Ukladanie zlyhalo:/).waitFor();
       await page.screenshot({path: path.join(artifacts, `save-error-${width}.png`), animations: 'disabled'});
+      await dialog.getByRole('button', {name: 'Done', exact: true}).click();
+      await dialog.waitFor({state: 'hidden'});
+      await page.getByRole('button', {name: 'Exportovať zálohu', exact: true}).click();
+      await dialog.getByRole('heading', {name: 'Záloha tréningov', exact: true}).waitFor();
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        dialog.getByRole('button', {name: 'Stiahnuť JSON zálohu', exact: true}).click(),
+      ]);
+      const exported = JSON.parse(await fs.readFile(await download.path(), 'utf8'));
+      assert.equal(exported.data.templates[7].name, 'Retry saved plan', 'Error-state export must include the current unsaved changes.');
+      assert.deepEqual(exported.data.logs, envelope.data.logs);
+      await closeSheet(page, 'Záloha tréningov');
       await page.evaluate(() => { window.rejectUxSave = false; });
-      await dialog.getByRole('button', {name: 'Zopakovať uloženie', exact: true}).click();
+      await page.getByRole('button', {name: 'Zopakovať uloženie', exact: true}).click();
+      await page.getByRole('button', {name: 'Edit Retry saved plan', exact: true}).click();
       await dialog.getByText('Uložené v tomto zariadení', {exact: true}).waitFor();
       assert.equal((await read(page)).templates[7].name, 'Retry saved plan');
       await page.getByLabel('Plan name', {exact: true}).fill('');
@@ -183,6 +196,13 @@ async function run() {
       await page.waitForFunction(() => JSON.parse(localStorage.getItem('jimappka.training.v6')).data.templates.filter(template => template.archived).length === 0);
       await noOverflow(page, `Plans ${width}`);
       await page.screenshot({path: path.join(artifacts, `plans-${width}.png`), animations: 'disabled'});
+      const primaryColor = await page.getByRole('button', {name: 'Start New plan', exact: true}).evaluate(element => getComputedStyle(element).backgroundColor);
+      assert.equal(primaryColor, 'rgb(52, 0, 85)', 'Primary actions must use #340055.');
+      await page.getByText('Profile', {exact: true}).click();
+      await page.getByRole('button', {name: 'Záloha tréningov', exact: true}).click();
+      await dialog.getByRole('button', {name: 'Vybrať JSON na import', exact: true}).waitFor();
+      await noOverflow(page, `Backup ${width}`);
+      await closeSheet(page, 'Záloha tréningov');
       console.log(`PASS ${width}px immediate details and editor, focus return, auto-save + reload, direct time entry, add exercise, starter deduplication and visible save error + retry`);
       console.log(`PASS ${width}px invalid name/effort handling, create + duplicate, confirmed removal, rotation order and archived starter restoration`);
     }

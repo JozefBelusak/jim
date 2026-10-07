@@ -53,7 +53,7 @@ Manifest nastavuje názov, ikonu a samostatné okno. Nie je potrebný APK, App S
 
 Dáta sa ukladajú lokálne v prehliadači daného zariadenia. Appka zobrazuje priebeh ukladania, úspech aj chybu s možnosťou zopakovania. Ak rozpozná zmenu z inej karty, zastaví ukladanie konfliktnej karty a ponúkne načítanie aktuálnych dát alebo export vlastnej zálohy.
 
-V **Profile → Záloha a prenos dát** možno stiahnuť JSON s históriou, rozbehnutým tréningom, rozvrhom, plánmi, vlastnými cvikmi aj pamäťou strojov. Import overí súbor a pred nahradením aktuálnych dát vyžaduje potvrdenie. Záloha sa najprv uloží; neúspešný import zachová existujúci stav. Posledný import možno počas otvorenej appky vrátiť.
+V **Profile → Záloha tréningov → Záloha a prenos dát** možno stiahnuť JSON s históriou, rozbehnutým tréningom, rozvrhom, plánmi, vlastnými cvikmi aj pamäťou strojov. Import overí súbor a pred nahradením aktuálnych dát vyžaduje potvrdenie. Záloha sa najprv uloží; neúspešný import zachová existujúci stav. Posledný import možno počas otvorenej appky vrátiť.
 
 Existujúce dáta starších verzií úložiska sa pri načítaní migrujú do verzie 6. Poškodené dáta sa zobrazia ako chyba a pôvodné uložené záznamy sa nevymažú. Offline cache uchováva súbory appky; JSON export zálohuje používateľské tréningové dáta.
 
@@ -75,3 +75,9 @@ Aktuálne správanie, zmenené súbory a overenia: [implementácia](./docs/imple
 Produkčný offline režim: [offline web appka](./docs/offline.md).
 
 Pôvodný produktový koncept: [koncept-aplikacie.md](./koncept-aplikacie.md).
+
+## Verejné profily a súkromné správy
+
+Účty a chat používajú Supabase. Návod na migráciu, Auth, e-maily a premenné
+pre Netlify je v [docs/social.md](docs/social.md). Tréningy fungujú aj bez účtu
+a zostávajú uložené lokálne. Bez nastaveného backendu je komunita označená ako nedostupná.

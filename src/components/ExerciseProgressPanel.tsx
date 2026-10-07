@@ -36,16 +36,16 @@ export function ExerciseProgressPanel({ exercise, logs, userId, now = Date.now()
     ? [
       { title: 'Maximum weight', unit: 'kg', value: (point) => point.maxWeightKg, color: colors.pink },
       { title: 'Estimated 1RM (Epley)', unit: 'kg', value: (point) => point.estimated1RmKg, color: colors.yellow },
-      { title: 'Exercise volume', unit: 'kg', value: (point) => point.volumeKg, color: colors.mint },
+      { title: 'Exercise volume', unit: 'kg', value: (point) => point.volumeKg, color: colors.accent },
     ] : metric === 'duration'
-      ? [{ title: 'Longest hold', unit: 's', value: (point) => point.longestDurationSeconds ?? 0, color: colors.mint }]
+      ? [{ title: 'Longest hold', unit: 's', value: (point) => point.longestDurationSeconds ?? 0, color: colors.accent }]
       : metric === 'distance_duration'
-        ? [{ title: 'Longest distance', unit: 'km', value: (point) => point.longestDistanceKm ?? 0, color: colors.mint },
+        ? [{ title: 'Longest distance', unit: 'km', value: (point) => point.longestDistanceKm ?? 0, color: colors.accent },
           { title: 'Duration', unit: 's', value: (point) => point.longestDurationSeconds ?? 0, color: colors.yellow }]
         : metric === 'assisted_reps'
-          ? [{ title: 'Least assistance (lower is harder)', unit: 'kg', value: (point) => point.minAssistanceKg ?? 0, color: colors.mint },
+          ? [{ title: 'Least assistance (lower is harder)', unit: 'kg', value: (point) => point.minAssistanceKg ?? 0, color: colors.accent },
             { title: 'Most repetitions', unit: 'reps', value: (point) => point.bestReps ?? 0, color: colors.yellow }]
-          : [{ title: 'Most repetitions', unit: 'reps', value: (point) => point.bestReps ?? 0, color: colors.mint }];
+          : [{ title: 'Most repetitions', unit: 'reps', value: (point) => point.bestReps ?? 0, color: colors.accent }];
 
   return (
     <View style={styles.screen}>
@@ -64,7 +64,7 @@ export function ExerciseProgressPanel({ exercise, logs, userId, now = Date.now()
           <View style={styles.progressHistoryList}>{selected.workingSets.map((set, index) => <View key={set.id}><Text style={styles.rowValue}>{index + 1}. {formatSetPerformance(set, selected.metric ?? metric)}</Text>{set.note ? <Text style={styles.rowMuted}>{set.note}</Text> : null}</View>)}</View>
         </View>
         <View style={styles.card}><Text style={styles.cardTitle}>Exercise history</Text><Text style={styles.rowMuted}>Tap a date or a chart bar to see every set.</Text>
-          <View style={styles.progressHistoryList}>{[...progress.points].reverse().map((point) => <Pressable key={point.logId} style={styles.progressHistoryRow} onPress={() => setSelectedLogId(point.logId)}><View style={styles.exerciseDetailTitle}><Text style={styles.rowTitle}>{formatDateLabel(point.date)} · {point.date.slice(0, 4)}</Text><Text style={styles.rowMuted}>{point.workingSets.length} working sets</Text></View><Text style={[styles.rowValue, selected.logId === point.logId && { color: colors.mint }]}>{formatSetPerformance(point.workingSets[0], point.metric ?? metric)}</Text></Pressable>)}</View>
+          <View style={styles.progressHistoryList}>{[...progress.points].reverse().map((point) => <Pressable key={point.logId} style={styles.progressHistoryRow} onPress={() => setSelectedLogId(point.logId)}><View style={styles.exerciseDetailTitle}><Text style={styles.rowTitle}>{formatDateLabel(point.date)} · {point.date.slice(0, 4)}</Text><Text style={styles.rowMuted}>{point.workingSets.length} working sets</Text></View><Text style={[styles.rowValue, selected.logId === point.logId && { color: colors.accent }]}>{formatSetPerformance(point.workingSets[0], point.metric ?? metric)}</Text></Pressable>)}</View>
         </View>
       </> : <View style={styles.card}><Text style={styles.compactText}>No completed working sets in this timeframe.</Text></View>}
     </View>

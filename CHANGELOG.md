@@ -22,7 +22,7 @@ Spresnenie: „Sa sústreď na pohodlnosť a intuitívnosť.“
 | PR-06 | Odporúčania predpokladajú splnené RIR pri chýbajúcich údajoch a univerzálny krok 2,5 kg. | Nasledujúci krok |
 | MM-07 | Výber stroja nedáva jasnú možnosť použiť jeho predchádzajúce hodnoty bez prepísania rozpracovanej práce. | Nasledujúci krok |
 | GR-08 | Aj ročný a celkový graf zobrazujú iba posledných šesť tréningov; chýba spoločný prehľad progresu. | Nasledujúci krok |
-| BE-09 | Profile je lokálna história; účty, verejné profily, chat a synchronizácia medzi zariadeniami chýbajú. | Vyžaduje spoločný backend a identitu používateľov |
+| BE-09 | Profile je lokálna história; účty, verejné profily, chat a synchronizácia medzi zariadeniami chýbajú. | Implementované účty, verejné profily a súkromný chat cez Supabase; aktivácia potrebuje projekt. Synchronizácia tréningov zostáva otvorená. |
 | UX-10 | Nejednotné názvy a jazyky, zbytočne veľa akcií na kartách, pomalé zadávanie časových cieľov. | Čiastočne hotové: jednotné označenie Plans, pomenované Manage plan, priame číselné polia; úplná lokalizácia zostáva otvorená |
 
 ## Ďalší smer
@@ -81,3 +81,70 @@ Spresnenie: „Sa sústreď na pohodlnosť a intuitívnosť.“
 Snímky a diagnostika sú v ignorovanom adresári `.expo/ux-checks`.
 Alternatíva pre prostredie bez Chrome: nainštalovať Chromium cez
 `npx playwright install chromium` a nastaviť `UX_BROWSER_CHANNEL=chromium`.
+
+
+## 2026-10-07 — verejné profily, súkromný chat a primárna farba
+
+### Výsledné správanie
+
+- Registrácia e-mailom a heslom, potvrdenie e-mailu, prihlásenie, odhlásenie
+  z tohto zariadenia a obnovenie hesla cez Supabase Auth.
+- Vytvorenie a úprava verejného profilu: jedinečné @meno, meno a voliteľné bio.
+  Vyhľadávanie podľa @mena/mena, zdieľanie odkazu a otvorenie profilu hosťom.
+  E-mail a tréningy sa nezverejňujú. Hosť dostane konkrétnu možnosť vytvoriť účet
+  a pred chatovaním dokončiť profil.
+- Zrozumiteľný prehľad Správy v Profile. Chat dvojice sa otvorí v samostatnom
+  paneli s pevne dostupným písaním správy, rozlíšenými bublinami, dátumami a časom.
+  Staršie správy sa načítavajú po 50; rovnaké časy správ nespôsobia stratu pri stránkovaní.
+- Realtime pre otvorený chat, oprava vynechaných správ pri návrate/pripojení,
+  pravidelná kontrola ako záloha a počet neprečítaných správ v konverzáciách.
+- Stav odosielania, potvrdenie serverom, retry a lokálne uchovanie neodoslaných
+  správ oddelene podľa účtu/konverzácie. Dvojklik nevytvorí dve správy; dve karty
+  si neprepíšu front. Rovnaký nonce pri opakovaní nevytvorí duplikát ani pri
+  strate odpovede po uložení. Zaseknutá požiadavka má 15-sekundový limit. Rozpracované odoslanie alebo
+  založenie chatu zostáva viazané na pôvodný účet aj pri prepnutí účtu v inej karte.
+- Blokovanie/odblokovanie profilu zastaví nové správy v oboch smeroch.
+  Databáza povoľuje čítanie správ iba účastníkom a odosielateľa určuje server.
+  Limit 30 nových správ za minútu na účet; privilegované funkcie v schéme private.
+- Lokálny denník je jasne oddelený od verejného profilu, bez druhého profilového avatara.
+  Tréningy a existujúce zálohy v6 zostávajú zachované; účet ich zatiaľ nesynchronizuje.
+  Záloha sa otvára pomenovaným tlačidlom Záloha tréningov; export pri chybe
+  uloženia otvorí zálohu priamo. Účet a chat nepoužívajú
+  lokálnu identitu tréningového denníka.
+- Primárna farba tlačidiel je `#340055`, text na nej je biely. Svetlejší fialový
+  akcent zachováva čitateľnosť aktívnych položiek, grafov a odkazov na tmavom pozadí.
+  PWA theme-color je rovnaká primárna farba.
+- Chýbajúci backend je označený ako nedostupná komunita. Appka nevytvára
+  predstierané lokálne účty/správy. Konfigurácia a SQL migrácia sú pripravené.
+
+### Overenie
+
+- TypeScript, ESLint, 161 unit/databázových testov v 19 súboroch a produkčný web build.
+- Skutočný PostgreSQL cez PGlite: guest práva, izolácia troch účtov, spoofing,
+  identita konverzácie, idempotencia, unread/read, blokovanie, rate limit a stránkovanie.
+- Chrome 320/390/720 px: dve oddelené prihlásenia, registrácia a chybná autentifikácia,
+  tvorba/úprava profilov, vyhľadanie, výmena správ, výpadok a reload, stratená odpoveď
+  po zápise, retry bez duplikátov, odhlásenie, blokovanie, obnova hesla, hosťovský profil a zachovanie tréningov.
+  HTTP autentifikácia a Realtime prenos sú v tomto teste simulované, SQL/RLS sú reálne.
+- Regresné tréningové UX kontroly na rovnakých šírkach prešli, vrátane exportu
+  neuložených zmien pri chybe úložiska, priameho otvorenia zálohy a primárnej farby.
+- Produkčný Supabase projekt, skutočné registračné e-maily a fyzické mobilné
+  prehliadače neboli overené. Aktivácia je opísaná v docs/social.md.
+
+### Súbory
+
+- `src/social/`: klient, typy, repository, doména, účet, editor profilu, vyhľadávanie,
+  chat, perzistentné neodoslané správy, timeout a testy.
+- `supabase/migrations/202610070001_social.sql`, `.env.example`, `.gitignore`
+- `App.tsx`, `src/screens/ProfileScreen.tsx`, `src/components/BottomSheet.tsx`
+- `src/theme/styles.ts`, `src/screens/WorkoutScreen.tsx`,
+  `src/components/MachineMemoryPanel.tsx`, `src/components/ExerciseProgressPanel.tsx`,
+  `src/components/SavingIndicator.tsx`, `public/index.html`, `public/manifest.webmanifest`
+- `scripts/test-social.cjs`, `scripts/test-ux.cjs`, `package.json`, `package-lock.json`, `docs/social.md`, `README.md`
+
+### Čo ešte potrebuje službu
+
+Konkrétny Supabase projekt, aplikovanie migrácie, jeho verejné premenné v Netlify,
+Auth redirecty a SMTP pre potvrdenie/obnovu e-mailov. Kód nie je pripojený
+k produkčnému projektu. Synchronizácia tréningov, push notifikácie a moderovanie
+nie sú súčasťou tejto zmeny; tieto funkcie sa neprezentujú ako hotové.

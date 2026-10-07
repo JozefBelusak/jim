@@ -27,6 +27,9 @@ import {
 } from './src/domain/workouts';
 import { CalendarScreen } from './src/screens/CalendarScreen';
 import { LibraryScreen } from './src/screens/LibraryScreen';
+import { SocialPanel } from './src/social/SocialPanel';
+import { useSocialAccount } from './src/social/useSocialAccount';
+import { BottomSheet } from './src/components/BottomSheet';
 import { ProfileScreen } from './src/screens/ProfileScreen';
 import { TodayScreen } from './src/screens/TodayScreen';
 import { TemplatesScreen } from './src/screens/TemplatesScreen';
@@ -46,7 +49,8 @@ export default function App() {
   const machineMemories = state.machineMemories ?? [];
   const scrollRef = useRef<ScrollView>(null);
   const [initialOpenLogId, setInitialOpenLogId] = useState<string | undefined>();
-  const [tab, setTab] = useState<TabKey>('today');
+  const account = useSocialAccount();
+  const [tab, setTab] = useState<TabKey>(() => typeof window !== 'undefined' && (new URLSearchParams(window.location.search).has('profile') || new URLSearchParams(window.location.search).has('account') || window.location.hash.includes('type=recovery')) ? 'profile' : 'today');
   const [nowTick, setNowTick] = useState(Date.now);
   const today = getTodayIso(new Date(nowTick));
   const [selectedDate, setSelectedDate] = useState(today);
@@ -55,6 +59,7 @@ export default function App() {
   const [level, setLevel] = useState<Level>('simple');
   const [undo, setUndo] = useState<UndoAction | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [backupOpen, setBackupOpen] = useState(false);
   const [notice, setNotice] = useState('');
   const exercises = useMemo(() => [...exerciseDb, ...customExercises], [customExercises]);
   const selectedExercise = getExercise(selectedExerciseId, exercises);
@@ -220,8 +225,8 @@ export default function App() {
       <View style={styles.savingStatus}>
         <SavingIndicator status={status} error={error} />
         {status === 'error' ? <View style={styles.chipRow}>
-          <Pressable style={styles.smallButton} onPress={retrySave}><Text style={styles.smallButtonText}>Zopakovať uloženie</Text></Pressable>
-          <Pressable style={styles.smallButton} onPress={() => setTab('profile')}><Text style={styles.smallButtonText}>Exportovať zálohu</Text></Pressable>
+          <Pressable style={styles.smallButton} accessibilityRole="button" onPress={retrySave}><Text style={styles.smallButtonText}>Zopakovať uloženie</Text></Pressable>
+          <Pressable style={styles.smallButton} accessibilityRole="button" onPress={() => setBackupOpen(true)}><Text style={styles.smallButtonText}>Exportovať zálohu</Text></Pressable>
         </View> : null}
       </View>
       <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tab === 'workout' ? styles.workoutContent : null, activeWorkout?.phase === 'rest' && tab === 'workout' ? styles.contentWithRestDock : null]}>
@@ -251,7 +256,7 @@ export default function App() {
         {tab === 'calendar' ? <CalendarScreen exercises={exercises} weekDays={weekDays} weekOffset={weekOffset} selectedDate={selectedDate} selectedLogs={selectedLogs} allLogs={logs} today={today} initialOpenLogId={initialOpenLogId}
           onSelectDate={setSelectedDate} onPreviousWeek={() => { setWeekOffset(weekOffset - 1); setSelectedDate(addDays(selectedDate, -7)); }} onNextWeek={() => { setWeekOffset(weekOffset + 1); setSelectedDate(addDays(selectedDate, 7)); }}
           onOpenPlans={() => setTab('templates')} onUpdateLog={updateLog} onDeleteLog={deleteLog} onRepeatLog={repeatWorkout} /> : null}
-        {tab === 'profile' ? <View style={styles.screen}><BackupPanel state={state} onImport={importBackup} /><ProfileScreen logs={logs} schedule={schedule} exercises={exercises} onUpdateLog={updateLog} onDeleteLog={deleteLog} onRepeatLog={repeatWorkout} /></View> : null}
+        {tab === 'profile' ? <View style={styles.screen}><SocialPanel account={account} /><Pressable accessibilityRole="button" accessibilityLabel="Záloha tréningov" style={styles.card} onPress={() => setBackupOpen(true)}><Text style={styles.rowTitle}>Záloha tréningov</Text><Text style={styles.rowMuted}>Stiahnuť JSON zálohu alebo importovať dáta</Text></Pressable><ProfileScreen logs={logs} schedule={schedule} exercises={exercises} onUpdateLog={updateLog} onDeleteLog={deleteLog} onRepeatLog={repeatWorkout} /></View> : null}
         {tab === 'workout' && activeWorkout ? <View style={styles.screen}>
           <WorkoutScreen workout={activeWorkout} exercises={exercises} logs={logs} now={nowTick} previousSets={activePreviousSets} personalRecords={calculatePersonalRecords(activeWorkout.entries, logs, localUserId)}
             onChange={(workout) => setState((current) => ({ ...current, activeWorkout: workout }))} onFinish={saveWorkout} onCancel={() => setConfirmCancel(true)} onMinimize={() => setTab('today')}
@@ -260,6 +265,7 @@ export default function App() {
               onSave={(input) => setState((current) => { const result = saveMachineMemory(current.machineMemories ?? [], input, createLocalId('machine'), Date.now()); return { ...current, machineMemories: result.memories, activeWorkout: current.activeWorkout ? linkWorkoutMachine(current.activeWorkout, visibleEntry.id, result.memory) : null }; })} /> : null} />
         </View> : null}
       </ScrollView>
+      <BottomSheet visible={backupOpen} title="Záloha tréningov" subtitle="Export a import dát z tohto zariadenia" onClose={() => setBackupOpen(false)}><BackupPanel state={state} onImport={importBackup} /></BottomSheet>
       <ConfirmationDialog visible={confirmCancel && Boolean(activeWorkout)} title="Zrušiť rozbehnutý tréning?" description="Odcvičené série sa neuložia do histórie. Po zrušení môžeš zmenu vrátiť." onConfirm={discardWorkout} onCancel={() => setConfirmCancel(false)} />
       {tab === 'workout' && activeWorkout?.phase === 'rest' ? <WorkoutRestDock workout={activeWorkout} now={nowTick}
         onPause={() => changeWorkout((workout) => pauseRestTimer(workout, Date.now()))} onResume={() => changeWorkout((workout) => resumeRestTimer(workout, Date.now()))}
