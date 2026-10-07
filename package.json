@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:ux": "npm run build && node scripts/test-ux.cjs",
+    "test:layout": "npm run build && node scripts/test-mobile-layout.cjs",
     "build": "expo export --clear --platform web && node scripts/create-offline-bundle.cjs",
     "test:social": "node scripts/test-social.cjs"
   },

@@ -1,6 +1,6 @@
 import { Session } from '@supabase/supabase-js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { socialClient } from './client';
+import { consumeAuthCallbackError, initialAuthCallbackError, socialClient } from './client';
 import { socialError } from './domain';
 import { socialRepository } from './repository';
 import { PublicProfile } from './types';
@@ -14,8 +14,18 @@ export function useSocialAccount() {
   const setProfile = useCallback((next: PublicProfile | null) => { if (!next || next.id === currentUser.current) updateProfile(next); }, []);
   const [loading, setLoading] = useState(Boolean(client));
   const [error, setError] = useState('');
+  const [callbackError, setCallbackError] = useState(initialAuthCallbackError);
   const [recovery, setRecovery] = useState(false);
   const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onLink = () => {
+      const next = consumeAuthCallbackError();
+      if (next) setCallbackError(next);
+    };
+    window.addEventListener('hashchange', onLink);
+    return () => window.removeEventListener('hashchange', onLink);
+  }, []);
   useEffect(() => {
     if (!client) return;
     let alive = true;
@@ -23,6 +33,7 @@ export function useSocialAccount() {
     const { data: subscription } = client.auth.onAuthStateChange((event, next) => {
       if (!alive) return;
       setSession(next); setError('');
+      if (event === 'SIGNED_IN') setCallbackError(null);
       if (event === 'PASSWORD_RECOVERY') setRecovery(true);
       if (event === 'SIGNED_OUT') { setProfile(null); setRecovery(false); }
     });
@@ -42,6 +53,6 @@ export function useSocialAccount() {
     return () => { alive = false; };
   }, [userId, repository, revision, setProfile]);
   const retry = useCallback(() => setRevision((value) => value + 1), []);
-  return { client, repository, session, profile: profile?.id === session?.user.id ? profile : null, setProfile, loading, error, recovery, finishRecovery: () => setRecovery(false), retry };
+  return { client, repository, session, profile: profile?.id === session?.user.id ? profile : null, setProfile, loading, error, callbackError, dismissCallbackError: () => setCallbackError(null), recovery, finishRecovery: () => setRecovery(false), retry };
 }
 export type SocialAccount = ReturnType<typeof useSocialAccount>;

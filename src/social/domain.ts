@@ -26,7 +26,7 @@ export function socialError(error: unknown): string {
   if (code === '23505') return 'Toto používateľské meno je už obsadené.';
   if (/profile_required/.test(message)) return 'Najprv si vytvor profil.';
   if (/chat_unavailable/.test(message)) return 'S týmto profilom teraz nie je možné chatovať. Môže byť zablokovaný alebo už neexistuje.';
-  if (/rate_limit|rate limit/i.test(message)) return 'Odosielaš príliš rýchlo. Počkaj chvíľu a skús znova.';
+  if (/rate_limit|rate limit/i.test(message) || /rate_limit/.test(code)) return 'Odosielaš príliš rýchlo. Počkaj chvíľu a skús znova.';
   if (/Invalid login credentials/i.test(message)) return 'Nesprávny e-mail alebo heslo.';
   if (/Email not confirmed/i.test(message)) return 'Najprv potvrď e-mail cez odkaz v správe.';
   if (/User already registered/i.test(message)) return 'Tento účet už existuje. Prihlás sa.';

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { BottomSheet } from '../components/BottomSheet';
 import { colors, styles } from '../theme/styles';
-import { AccountSheet } from './AccountSheet';
+import { AccountMode, AccountSheet } from './AccountSheet';
+import { authCallbackMessage } from './authCallback';
 import { ChatSheet } from './ChatSheet';
 import { linkedUsername, profileUrl, socialError } from './domain';
 import { ProfileEditor } from './ProfileEditor';
@@ -15,6 +16,7 @@ export function SocialPanel({ account }: { account: SocialAccount }) {
   const { repository, session, profile } = account;
   const userId = session?.user.id;
   const [sheet, setSheet] = useState<Sheet>(null);
+  const [authMode, setAuthMode] = useState<AccountMode>('signup');
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [chatsLoading, setChatsLoading] = useState(false);
   const [chatError, setChatError] = useState('');
@@ -113,6 +115,15 @@ export function SocialPanel({ account }: { account: SocialAccount }) {
   }
   if (!account.client) return <View style={[styles.card, socialStyles.gap]}><Text style={styles.cardTitle}>Profil a správy</Text><SocialFeedback>Komunita zatiaľ nie je dostupná. Tréningový denník môžeš používať ďalej.</SocialFeedback></View>;
   return <View style={socialStyles.gap}>
+    {account.callbackError ? <View style={[styles.card, socialStyles.gap]}>
+      <Text style={styles.cardTitle}>E-mailový odkaz</Text>
+      <SocialFeedback error>{authCallbackMessage(account.callbackError)}</SocialFeedback>
+      {session ? <SocialButton label="Pokračovať s prihláseným účtom" onPress={account.dismissCallbackError} /> : <>
+        <SocialButton primary label="Prihlásiť sa" onPress={() => { setAuthMode('login'); setSheet('auth'); }} />
+        <SocialButton label="Poslať nové potvrdenie e-mailu" onPress={() => { setAuthMode('confirm'); setSheet('auth'); }} />
+        <SocialButton label="Zavrieť upozornenie" onPress={account.dismissCallbackError} />
+      </>}
+    </View> : null}
     <View style={[styles.card, socialStyles.gap]}>
       {account.loading ? <ActivityIndicator color={colors.accent} accessibilityLabel="Načítavam účet" /> : account.error ? <><SocialFeedback error>{account.error}</SocialFeedback><SocialButton label="Zopakovať načítanie účtu" onPress={account.retry} /></> : profile ? <>
         <ProfileHeading person={profile} />
@@ -135,7 +146,7 @@ export function SocialPanel({ account }: { account: SocialAccount }) {
       </Pressable>)}
     </View> : null}
     {session ? <View style={[styles.card, socialStyles.gap]}><Text style={styles.rowMuted}>{session.user.email}</Text><SocialButton label="Odhlásiť sa" onPress={() => void logout()} busy={busy} /><SocialFeedback>Tréningový denník je uložený v tomto zariadení. Účet ho zatiaľ nesynchronizuje.</SocialFeedback></View> : null}
-    <AccountSheet account={account} visible={sheet === 'auth'} onClose={closeAuth} />
+    <AccountSheet account={account} visible={sheet === 'auth'} onClose={closeAuth} initialMode={authMode} />
     {sheet === 'editor' && session ? <ProfileEditor account={account} onClose={() => setSheet(pendingPeer ? 'public' : null)} /> : null}
     <BottomSheet visible={sheet === 'people'} title="Nájsť ľudí" subtitle="Vyhľadaj @meno alebo meno na profile." onClose={() => setSheet(null)}>
       <SocialField label="Vyhľadať profil" value={query} onChange={setQuery} maxLength={60} />

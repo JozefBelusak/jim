@@ -34,6 +34,7 @@ const tokens = new Map();
 let serial = Promise.resolve();
 const errors = [];
 const requests = [];
+const confirmations = [];
 function runAs(id, action) {
   const result = serial.then(async () => {
     await db.exec(`reset role; set role ${id ? 'authenticated' : 'anon'};`);
@@ -74,6 +75,11 @@ async function transport(route, controls) {
     }
     if (url.pathname === '/auth/v1/logout') return reply({});
     if (url.pathname === '/auth/v1/recover') return reply({});
+    if (url.pathname === '/auth/v1/resend') {
+      confirmations.push({body, redirect:url.searchParams.get('redirect_to')});
+      if (controls.resendRateLimit) { controls.resendRateLimit = false; return reply({msg:'Email delivery delayed',error_code:'over_email_send_rate_limit'},429); }
+      return reply({});
+    }
     if (url.pathname === '/auth/v1/user') {
       const account = [...users.values()].find(entry => entry.user.id === userId);
       if (!account) return reply({msg:'Not authorized'},401);
@@ -235,6 +241,49 @@ async function main() {
       await alicePage.getByRole('button',{name:'Vytvoriť účet / prihlásiť sa',exact:true}).waitFor();
       assert.equal(await alicePage.getByRole('button',{name:new RegExp(`Chat s Bob ${width}`)}).count(),0,'Logout must hide private chats.');
       assert.equal(await alicePage.evaluate(() => JSON.parse(localStorage.getItem('jimappka.training.v6')).data.logs[0].name),'Keep my training');
+      // A failed email link opens the account tab, survives INITIAL_SESSION and
+      // allows resend/login without losing the local workout or an existing session.
+      const expiredUrl = `${address}/#error=access_denied&error_code=otp_expired&error_description=Email+link+is+invalid+or+has+expired&sb=`;
+      await alicePage.goto(expiredUrl);
+      const expiredNotice = alicePage.getByText(/E-mailový odkaz vypršal alebo už bol použitý/);
+      await expiredNotice.waitFor();
+      await alicePage.getByRole('button',{name:'Vytvoriť účet / prihlásiť sa',exact:true}).waitFor();
+      assert.equal(new URL(alicePage.url()).hash,'','Error fragments must be consumed once.');
+      await alicePage.getByRole('button',{name:'Prihlásiť sa',exact:true}).click();
+      await alicePage.getByRole('dialog').waitFor();
+      await alicePage.getByRole('dialog').getByLabel('Heslo',{exact:true}).waitFor();
+      await alicePage.getByRole('button',{name:'Close Prihlásiť sa',exact:true}).click();
+      await alicePage.getByRole('dialog').waitFor({state:'hidden'});
+      await alicePage.getByRole('button',{name:'Poslať nové potvrdenie e-mailu',exact:true}).click();
+      await alicePage.getByRole('dialog').waitFor();
+      const confirmationDialog = alicePage.getByRole('dialog');
+      assert.equal(await confirmationDialog.getByLabel('Heslo',{exact:true}).count(),0);
+      await confirmationDialog.getByLabel('E-mail',{exact:true}).fill(`alice${width}@fixture.test`);
+      controls.resendRateLimit = true;
+      await confirmationDialog.getByRole('button',{name:'Poslať potvrdzovací e-mail',exact:true}).click();
+      await confirmationDialog.getByText('Odosielaš príliš rýchlo. Počkaj chvíľu a skús znova.',{exact:true}).waitFor();
+      await confirmationDialog.getByRole('button',{name:'Poslať potvrdzovací e-mail',exact:true}).click();
+      await confirmationDialog.getByText(/Ak účet čaká na potvrdenie, príde ti nový e-mail/).waitFor();
+      assert.equal(confirmations.at(-1).body.type,'signup');
+      assert.equal(confirmations.at(-1).body.email,`alice${width}@fixture.test`);
+      assert.equal(confirmations.at(-1).redirect,`${address}/?account=1`);
+      await confirmationDialog.getByRole('button',{name:'Už mám účet — prihlásiť',exact:true}).click();
+      await confirmationDialog.getByLabel('Heslo',{exact:true}).fill('Test-Password123');
+      await confirmationDialog.getByRole('button',{name:'Prihlásiť sa',exact:true}).click();
+      await alicePage.getByRole('dialog').waitFor({state:'hidden'});
+      await alicePage.getByText(`Alice updated ${width}`,{exact:true}).waitFor();
+      await expiredNotice.waitFor({state:'hidden'});
+      // Changing the query forces a full navigation; capture runs before the SDK.
+      await alicePage.goto(`${address}/?account=1${new URL(expiredUrl).hash}`);
+      await expiredNotice.waitFor();
+      await alicePage.getByText(`Alice updated ${width}`,{exact:true}).waitFor();
+      await noOverflow(alicePage);
+      await alicePage.screenshot({path:path.join(artifacts,`expired-link-${width}.png`),animations:'disabled'});
+      await alicePage.getByRole('button',{name:'Pokračovať s prihláseným účtom',exact:true}).click();
+      await expiredNotice.waitFor({state:'hidden'});
+      assert.equal(await alicePage.evaluate(() => JSON.parse(localStorage.getItem('jimappka.training.v6')).data.logs[0].name),'Keep my training');
+      await alicePage.getByRole('button',{name:'Odhlásiť sa',exact:true}).click();
+      await alicePage.getByRole('button',{name:'Vytvoriť účet / prihlásiť sa',exact:true}).waitFor();
       if (width === 390) {
         await alicePage.getByRole('button',{name:'Vytvoriť účet / prihlásiť sa',exact:true}).click();
         await alicePage.getByRole('button',{name:'Už mám účet — prihlásiť',exact:true}).click();
@@ -244,7 +293,8 @@ async function main() {
         await alicePage.getByText('Ak účet existuje, príde ti odkaz na nastavenie nového hesla.',{exact:true}).waitFor();
         const recovery = session(users.get(`alice${width}@fixture.test`).user);
         const fragment = new URLSearchParams({access_token:recovery.access_token,refresh_token:recovery.refresh_token,expires_in:'3600',token_type:'bearer',type:'recovery'});
-        await alicePage.goto(`${address}/?account=1#${fragment}`);
+        // Email verification returns from Supabase as a full document navigation.
+        await alicePage.goto(`${address}/?account=1&recovery=1#${fragment}`);
         await alicePage.getByLabel('Nové heslo',{exact:true}).fill('New-Password123');
         await alicePage.getByRole('button',{name:'Uložiť heslo',exact:true}).click();
         await alicePage.getByRole('dialog').waitFor({state:'hidden'});

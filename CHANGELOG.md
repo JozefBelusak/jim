@@ -5,6 +5,53 @@ Pri ďalšej úprave zaznamenať výsledné správanie, overenie a stav súvisia
 Zachovať existujúce tréningy, históriu a plány. Nepovažovať bod za hotový len preto,
 že existuje jeho tlačidlo; rozhoduje celý používateľský tok.
 
+## 2026-10-07 — iPhone rozloženie a presná primárna farba
+
+- Opravené dvojité bezpečné odstupy: HTML aj React Native Web `SafeAreaView`
+  používali `safe-area-inset-*`, čo na iPhone posunulo hlavičku aj navigáciu.
+  Web teraz používa jeden odstup v HTML; natívna vetva zachováva `SafeAreaView`.
+- Otvorené BottomSheet panely mimo HTML koreňa rešpektujú vlastný jeden odstup,
+  aj v landscape. Koreň používa dynamickú výšku viewportu a iOS text-size-adjust.
+- Aktívna navigácia, deň v kalendári, chips, toggles a dokončené série majú presné
+  plné `#340055`. Staré `#C6A0E5`/`#A58CD8` akcenty sú odstránené; text používa
+  svetlé neutrálne farby. Táto zmena nahrádza predchádzajúce rozhodnutie o levanduľovom akcente.
+- Plocha za priehľadným iOS status barom má `#340055`; manifest a theme-color
+  zostávajú v rovnakej farbe. O vykreslení systémových líšt rozhoduje aj OS.
+- Netlify badge sa potvrdil vo verejnom HTML ako skript vložený hostingom.
+  Postup vypnutia a aktualizácie appky bez mazania dát je v `docs/offline.md`.
+- Overenie: TypeScript, ESLint, 167 unit/databázových testov, produkčný build,
+  Chrome UX na 320/390/720 px a nový layout test v Chrome aj desktopovom WebKite
+  na 320/390 px. Chrome emuluje reálne CSS env insets, WebKit CSS premenné.
+  Overené sú jediné odstupy, presné RGB výberov, panely, zmeny výšky a landscape.
+  Fyzický iPhone nebol k dispozícii.
+- Súbory: `App.tsx`, `public/index.html`, `src/theme/styles.ts`,
+  `src/components/BottomSheet.tsx`, `scripts/test-mobile-layout.cjs`,
+  `package.json`, `docs/offline.md`, `CHANGELOG.md`. Dáta tréningov sa nemenia.
+
+## 2026-10-07 — neplatné registračné odkazy
+
+- Návrat z e-mailu s `otp_expired` alebo inou chybou otvorí Profile a zobrazí
+  zrozumiteľnú hlášku. Funguje aj pri príchode odkazu do už otvorenej appky.
+- Chybové parametre sa odstránia z adresy; platné prihlasovacie/recovery tokeny
+  a nesúvisiace URL parametre zostávajú pre auth SDK. Text chyby z URL sa nezobrazuje.
+- Existujúce prihlásenie zostáva zachované. Upozornenie možno zavrieť; pri novom
+  úspešnom prihlásení zmizne. Načítanie profilu ho predčasne nevymaže.
+- Priame prihlásenie z upozornenia a opätovné odoslanie potvrdenia e-mailu cez
+  Supabase Auth. Potvrdenie je dostupné aj z registračného/prihlasovacieho formulára.
+  E-mail zostáva pri prepnutí formulára vyplnený; resend nevyžaduje heslo.
+- Limity odosielania e-mailov sa zobrazia aj pri chybách určených len kódom.
+- Overenie: TypeScript, ESLint, 167 unit/databázových testov v 20 súboroch,
+  produkčný web build a Chrome na šírkach 320/390/720 px. Prehliadač overil
+  návrat s chybou počas behu aj pri štarte, priame prihlásenie, resend a jeho
+  rate limit, zachovanie session/tréningov a obnovu hesla. Auth/e-mailový transport
+  je testovacia simulácia so skutočným Supabase SDK; SQL/RLS používa PostgreSQL/PGlite.
+  Skutočné doručovanie e-mailov v produkčnom projekte nebolo týmto testom overené.
+- Súbory: `App.tsx`, `src/social/{authCallback.ts,authCallback.test.ts,client.ts,
+  useSocialAccount.ts,AccountSheet.tsx,SocialPanel.tsx,domain.ts}`,
+  `scripts/test-social.cjs`, `docs/social.md`, `CHANGELOG.md`.
+- Databázová migrácia sa nemení. Táto oprava nezaručuje doručenie e-mailu ani
+  neobnovuje použitý token; odosielanie a platnosť nových odkazov spravuje Supabase/SMTP.
+
 ## Zadanie používateľa
 
 „Tak oprav najprv toto a použi tento prompt ako log nasledujúcich zmien.“

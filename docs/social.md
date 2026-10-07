@@ -29,6 +29,25 @@ existujúce tréningy, plány, zálohy alebo ich `local-user` identitu.
 Bez konfigurácie appka jasne oznámi, že komunita zatiaľ nie je dostupná. Nevytvára
 lokálny účet ani predstierané konverzácie.
 
+## Neplatný alebo použitý e-mailový odkaz
+
+`otp_expired` znamená neplatný alebo vypršaný e-mailový odkaz. Odkaz mohol byť
+už použitý; niektoré e-mailové služby ho tiež otvoria pri bezpečnostnej kontrole.
+Ak prihlásenie e-mailom a heslom funguje, pokračuj s existujúcim účtom a vytvor
+si verejný profil. Samotné prihlásenie neurčuje, či je v projekte zapnuté potvrdenie e-mailu.
+
+Appka otvorí Profile, zobrazí zrozumiteľné upozornenie a odstráni chybové parametre
+z adresy. Existujúce prihlásenie zostáva zachované. Bez prihlásenia ponúkne
+„Prihlásiť sa“ alebo „Poslať nové potvrdenie e-mailu“. Opätovné potvrdenie je dostupné
+aj z registračného a prihlasovacieho formulára. Pri obnove hesla použi „Zabudnuté heslo“.
+Odoslanie môže Supabase obmedziť; appka zobrazí chybu a dovolí skúsiť ho neskôr.
+
+Pre tento web je Site URL `https://gymratturbo.netlify.app` a povolený redirect
+`https://gymratturbo.netlify.app/?account=1`. Kvôli `otp_expired` znovu nespúšťaj
+databázovú migráciu ani nevytváraj druhý účet. Ak nový odkaz opakovane zlyhá už
+pri prvom otvorení, skontroluj e-mailové prefetching/tracking nastavenia podľa
+[dokumentácie Supabase](https://supabase.com/docs/guides/auth/auth-email-templates#limitations).
+
 ## Správanie a ochrana dát
 
 - Verejný profil obsahuje @meno, meno, bio a čas vytvorenia. E-mail sa nepublikuje.

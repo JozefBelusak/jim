@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#340055" />
+    <meta name="color-scheme" content="dark" />
     <meta name="description" content="Jimrat – tvoje tréningy, cviky a história cvičenia." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="Jimrat" />
@@ -12,14 +13,40 @@
     <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png" />
     <title>Jimrat</title>
     <style id="expo-reset">
+      :root {
+        --app-safe-top: env(safe-area-inset-top, 0px);
+        --app-safe-right: env(safe-area-inset-right, 0px);
+        --app-safe-bottom: env(safe-area-inset-bottom, 0px);
+        --app-safe-left: env(safe-area-inset-left, 0px);
+      }
       html, body { height: 100%; margin: 0; background: #10131B; }
-      body { overflow: hidden; }
+      body { overflow: hidden; -webkit-text-size-adjust: 100%; }
       #root {
         display: flex;
         height: 100%;
         height: 100dvh;
         box-sizing: border-box;
-        padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+        padding: var(--app-safe-top) var(--app-safe-right) var(--app-safe-bottom) var(--app-safe-left);
+      }
+      /* iOS standalone draws its translucent status bar over this safe-area strip. */
+      #root::before {
+        content: '';
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: var(--app-safe-top);
+        background: #340055;
+        pointer-events: none;
+      }
+      /* Sheets render in a portal outside #root and need their own single inset. */
+      [id^="app-sheet-overlay-"] {
+        padding: var(--app-safe-top) var(--app-safe-right) var(--app-safe-bottom) var(--app-safe-left);
+      }
+      @media (min-width: 680px) {
+        body [id^="app-sheet-overlay-"] {
+          padding: max(24px, var(--app-safe-top)) max(24px, var(--app-safe-right)) max(24px, var(--app-safe-bottom)) max(24px, var(--app-safe-left));
+        }
       }
     </style>
   </head>

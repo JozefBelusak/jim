@@ -1,6 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Image, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
+import { Image, Platform, Pressable, SafeAreaView, ScrollView, Text, View } from 'react-native';
 import { hamsterLogo } from './src/assets';
 import { ConfirmationDialog } from './src/components/ConfirmationDialog';
 import { registerOfflineSupport } from './src/web/offline';
@@ -40,6 +40,8 @@ import { styles } from './src/theme/styles';
 import { ActiveWorkout, Level, PlanDay, TabKey, TemplateExercise, WorkoutLog, WorkoutTemplate } from './src/types';
 
 const localUserId = 'local-user';
+// Web safe-area insets belong to public/index.html; native keeps SafeAreaView.
+const AppSafeArea = Platform.OS === 'web' ? View : SafeAreaView;
 const createLocalId = (prefix = 'item') => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 type UndoAction = { label: string; apply: (state: TrainingState) => TrainingState };
 
@@ -50,7 +52,8 @@ export default function App() {
   const scrollRef = useRef<ScrollView>(null);
   const [initialOpenLogId, setInitialOpenLogId] = useState<string | undefined>();
   const account = useSocialAccount();
-  const [tab, setTab] = useState<TabKey>(() => typeof window !== 'undefined' && (new URLSearchParams(window.location.search).has('profile') || new URLSearchParams(window.location.search).has('account') || window.location.hash.includes('type=recovery')) ? 'profile' : 'today');
+  const [tab, setTab] = useState<TabKey>(() => account.callbackError || (typeof window !== 'undefined' && (new URLSearchParams(window.location.search).has('profile') || new URLSearchParams(window.location.search).has('account') || window.location.hash.includes('type=recovery'))) ? 'profile' : 'today');
+  useEffect(() => { if (account.callbackError) setTab('profile'); }, [account.callbackError]);
   const [nowTick, setNowTick] = useState(Date.now);
   const today = getTodayIso(new Date(nowTick));
   const [selectedDate, setSelectedDate] = useState(today);
@@ -207,13 +210,13 @@ export default function App() {
     setUndo({ label: 'Plán bol vymazaný', apply: (current) => ({ ...current, templates: current.templates.some((template) => template.id === id) ? current.templates : [...current.templates, deleted] }) });
   }
 
-  if (!ready || hasConflict) return <SafeAreaView style={styles.safeArea}><ScrollView contentContainerStyle={styles.content}>
+  if (!ready || hasConflict) return <AppSafeArea style={styles.safeArea}><ScrollView contentContainerStyle={styles.content}>
     <Text style={styles.title}>{status === 'loading' ? 'Načítavam tréningy…' : hasConflict ? 'Zmeny v inej karte' : 'Dáta sa nepodarilo načítať'}</Text>
     {error ? <><Text style={styles.compactText}>{error}</Text><Pressable style={styles.secondaryFull} onPress={reload}><Text style={styles.secondaryText}>Skúsiť načítať znova</Text></Pressable>
       <BackupPanel state={state} allowExport={ready} onImport={importBackup} /></> : null}
-  </ScrollView></SafeAreaView>;
+  </ScrollView></AppSafeArea>;
 
-  return <SafeAreaView style={styles.safeArea}>
+  return <AppSafeArea style={styles.safeArea}>
     <StatusBar style="light" />
     <View style={styles.app}>
       <BackgroundLines />
@@ -273,5 +276,5 @@ export default function App() {
         onSkip={() => changeWorkout((workout) => advanceToNextSet(workout))} /> : null}
       {tab !== 'workout' ? <View style={styles.tabBar}>{tabs.map((item) => <Pressable key={item.key} onPress={() => { setTab(item.key); setConfirmCancel(false); }} style={[styles.tabButton, tab === item.key ? styles.tabActive : null]}><Text style={[styles.tabText, tab === item.key ? styles.tabTextActive : null]}>{item.label}</Text></Pressable>)}</View> : null}
     </View>
-  </SafeAreaView>;
+  </AppSafeArea>;
 }

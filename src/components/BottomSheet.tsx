@@ -69,7 +69,7 @@ export function BottomSheet({ visible, title, subtitle, onClose, children, foote
   if (!visible) return null;
 
   return <Modal transparent visible animationType="fade" onRequestClose={() => closeRef.current()} accessibilityLabelledBy={titleId} accessibilityLabel={title}>
-    <KeyboardAvoidingView style={[sheetStyles.overlay, desktop && sheetStyles.desktopOverlay]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardAvoidingView nativeID={`app-sheet-overlay-${id}`} style={[sheetStyles.overlay, desktop && sheetStyles.desktopOverlay]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Pressable style={StyleSheet.absoluteFill} accessibilityLabel={`Dismiss ${title}`} accessibilityRole="button" onPress={onClose} importantForAccessibility="no" accessibilityElementsHidden tabIndex={-1} />
       <View nativeID={sheetId} style={[sheetStyles.sheet, { maxHeight: height * 0.85 }, fullHeight && { height: height * 0.85 }, desktop && sheetStyles.desktopSheet]}
         accessibilityViewIsModal>

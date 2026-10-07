@@ -4,6 +4,18 @@ import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { fetchWithTimeout } from './network';
 import { Database } from './types';
+import { readAuthCallback } from './authCallback';
+
+export function consumeAuthCallbackError() {
+  if (typeof window === 'undefined') return null;
+  const callback = readAuthCallback(window.location.href);
+  if (callback.error) {
+    // Keep existing sessions and unrelated URL parameters, including valid auth tokens.
+    window.history.replaceState(window.history.state, '', callback.cleanUrl);
+  }
+  return callback.error;
+}
+export const initialAuthCallbackError = consumeAuthCallbackError();
 
 const url = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const key = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY || process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
