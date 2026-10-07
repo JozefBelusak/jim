@@ -32,7 +32,7 @@ import { TemplatesScreen } from './src/screens/TemplatesScreen';
 import { WorkoutRestDock, WorkoutScreen } from './src/screens/WorkoutScreen';
 import { TrainingState } from './src/storage/trainingStorage';
 import { useTrainingState } from './src/storage/useTrainingState';
-import { styles } from './src/theme/styles';
+import { colors, styles } from './src/theme/styles';
 import { ActiveWorkout, Level, PlanDay, TabKey, TemplateExercise, WorkoutLog, WorkoutTemplate } from './src/types';
 
 const localUserId = 'local-user';
@@ -212,18 +212,28 @@ export default function App() {
       <View style={styles.header}>
         <View style={styles.logoFrame}><Image source={hamsterLogo} style={styles.logo} /></View>
         <View style={styles.headerText}><Text style={styles.title}>{screenTitle(tab)}</Text></View>
-        <View style={styles.headerClock}><Text style={styles.badgeLabel}>{activeWorkout ? 'workout' : 'workouts'}</Text><Text style={styles.headerClockText}>{activeWorkout ? formatTime(getWorkoutElapsedSeconds(activeWorkout, nowTick)) : logs.length}</Text></View>
+        <View style={styles.headerClock}><Text style={styles.badgeLabel}>{activeWorkout ? 'Trvanie' : 'Tréningy'}</Text><Text style={styles.headerClockText}>{activeWorkout ? formatTime(getWorkoutElapsedSeconds(activeWorkout, nowTick)) : logs.length}</Text></View>
       </View>
-      <View style={{ paddingHorizontal: 18, paddingBottom: 6 }}>
-        <Text accessibilityLiveRegion="polite" style={[styles.rowMuted, status === 'error' ? { color: '#FF8CB9' } : null]}>{status === 'saving' ? 'Ukladám…' : status === 'error' ? `Ukladanie zlyhalo: ${error}` : 'Uložené v tomto zariadení'}</Text>
+      <View style={styles.savingStatus}>
+        <View style={styles.savingStatusRow}>
+          <View style={[styles.statusDot, { backgroundColor: status === 'error' ? colors.pink : status === 'saving' ? colors.muted : colors.mint }]} />
+          <Text accessibilityLiveRegion="polite" style={[styles.savingStatusText, status === 'error' ? { color: colors.pink } : null]}>{status === 'saving' ? 'Ukladám…' : status === 'error' ? `Ukladanie zlyhalo: ${error}` : 'Uložené v tomto zariadení'}</Text>
+        </View>
         {status === 'error' ? <View style={styles.chipRow}>
           <Pressable style={styles.smallButton} onPress={retrySave}><Text style={styles.smallButtonText}>Zopakovať uloženie</Text></Pressable>
           <Pressable style={styles.smallButton} onPress={() => setTab('profile')}><Text style={styles.smallButtonText}>Exportovať zálohu</Text></Pressable>
         </View> : null}
       </View>
-      <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, activeWorkout?.phase === 'rest' && tab === 'workout' ? styles.contentWithRestDock : null]}>
-        {notice ? <Pressable style={styles.card} onPress={() => setNotice('')}><Text style={styles.compactText}>{notice} · zavrieť</Text></Pressable> : null}
-        {undo ? <View style={styles.card}><Text style={styles.rowTitle}>{undo.label}</Text><Pressable style={styles.smallButton} onPress={() => { setState(undo.apply); setUndo(null); }}><Text style={styles.smallButtonText}>Vrátiť zmenu</Text></Pressable><Pressable onPress={() => setUndo(null)}><Text style={styles.rowMuted}>Zavrieť</Text></Pressable></View> : null}
+      <ScrollView ref={scrollRef} keyboardShouldPersistTaps="handled" contentContainerStyle={[styles.content, tab === 'workout' ? styles.workoutContent : null, activeWorkout?.phase === 'rest' && tab === 'workout' ? styles.contentWithRestDock : null]}>
+        {notice && !undo ? <View style={styles.feedback}>
+          <Text style={styles.feedbackText}>{notice}</Text>
+          <Pressable style={styles.feedbackClose} onPress={() => setNotice('')} accessibilityRole="button" accessibilityLabel="Zavrieť oznámenie"><Text style={styles.feedbackCloseText}>×</Text></Pressable>
+        </View> : null}
+        {undo ? <View style={styles.feedback}>
+          <Text style={styles.feedbackText}>{undo.label}</Text>
+          <Pressable style={styles.feedbackAction} onPress={() => { setState(undo.apply); setUndo(null); }} accessibilityRole="button"><Text style={styles.feedbackActionText}>Vrátiť zmenu</Text></Pressable>
+          <Pressable style={styles.feedbackClose} onPress={() => { setUndo(null); setNotice(''); }} accessibilityRole="button" accessibilityLabel="Zavrieť oznámenie"><Text style={styles.feedbackCloseText}>×</Text></Pressable>
+        </View> : null}
         {tab === 'today' ? <TodayScreen logs={todayLogs} allLogs={logs} exercises={exercises} userId={localUserId} today={today} templates={templates} nextTemplate={nextTemplate} nextTemplateLastLog={nextTemplateLastLog}
           activeWorkoutLabel={activeWorkout?.name ?? null} activeWorkoutElapsed={activeWorkout ? getWorkoutElapsedSeconds(activeWorkout, nowTick) : 0} hasActiveWorkout={Boolean(activeWorkout)}
           onStartTemplate={startTemplate} onStartEmpty={startEmpty} onStartStarter={startStarter} onResume={() => setTab('workout')} onCancelWorkout={() => setConfirmCancel(true)} onOpenPlans={() => setTab('templates')}
@@ -243,12 +253,11 @@ export default function App() {
           onOpenPlans={() => setTab('templates')} onUpdateLog={updateLog} onDeleteLog={deleteLog} onRepeatLog={repeatWorkout} /> : null}
         {tab === 'profile' ? <View style={styles.screen}><BackupPanel state={state} onImport={importBackup} /><ProfileScreen logs={logs} schedule={schedule} exercises={exercises} onUpdateLog={updateLog} onDeleteLog={deleteLog} onRepeatLog={repeatWorkout} /></View> : null}
         {tab === 'workout' && activeWorkout ? <View style={styles.screen}>
-          {visibleEntry ? <MachineMemoryPanel key={`${visibleEntry.id}-${visibleEntry.machineMemoryId ?? ''}`} entry={visibleEntry} memories={machineMemories} logs={logs} userId={localUserId}
-            onSelect={(memory) => changeWorkout((workout) => linkWorkoutMachine(workout, visibleEntry.id, memory))}
-            onSave={(input) => setState((current) => { const result = saveMachineMemory(current.machineMemories ?? [], input, createLocalId('machine'), Date.now()); return { ...current, machineMemories: result.memories, activeWorkout: current.activeWorkout ? linkWorkoutMachine(current.activeWorkout, visibleEntry.id, result.memory) : null }; })} /> : null}
           <WorkoutScreen workout={activeWorkout} exercises={exercises} logs={logs} now={nowTick} previousSets={activePreviousSets} personalRecords={calculatePersonalRecords(activeWorkout.entries, logs, localUserId)}
-            onChange={(workout) => setState((current) => ({ ...current, activeWorkout: workout }))} onFinish={saveWorkout} onCancel={() => setConfirmCancel(true)} onMinimize={() => setTab('today')} />
-          <Pressable style={styles.dangerOutlineFull} onPress={() => setConfirmCancel(true)}><Text style={styles.dangerOutlineText}>Zrušiť tréning</Text></Pressable>
+            onChange={(workout) => setState((current) => ({ ...current, activeWorkout: workout }))} onFinish={saveWorkout} onCancel={() => setConfirmCancel(true)} onMinimize={() => setTab('today')}
+            machineMemoryPanel={visibleEntry ? <MachineMemoryPanel key={`${visibleEntry.id}-${visibleEntry.machineMemoryId ?? ''}`} entry={visibleEntry} memories={machineMemories} logs={logs} userId={localUserId}
+              onSelect={(memory) => changeWorkout((workout) => linkWorkoutMachine(workout, visibleEntry.id, memory))}
+              onSave={(input) => setState((current) => { const result = saveMachineMemory(current.machineMemories ?? [], input, createLocalId('machine'), Date.now()); return { ...current, machineMemories: result.memories, activeWorkout: current.activeWorkout ? linkWorkoutMachine(current.activeWorkout, visibleEntry.id, result.memory) : null }; })} /> : null} />
         </View> : null}
       </ScrollView>
       <ConfirmationDialog visible={confirmCancel && Boolean(activeWorkout)} title="Zrušiť rozbehnutý tréning?" description="Odcvičené série sa neuložia do histórie. Po zrušení môžeš zmenu vrátiť." onConfirm={discardWorkout} onCancel={() => setConfirmCancel(false)} />

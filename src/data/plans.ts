@@ -128,16 +128,16 @@ export function formatSignedTime(seconds: number) {
 export function screenTitle(tab: TabKey) {
   switch (tab) {
     case 'library':
-      return 'LIBRARY';
+      return 'Library';
     case 'calendar':
-      return 'CALENDAR';
+      return 'Calendar';
     case 'templates':
-      return 'TEMPLATES';
+      return 'Templates';
     case 'profile':
-      return 'PROFILE';
+      return 'Profile';
     case 'workout':
-      return 'WORKOUT';
+      return 'Workout';
     default:
-      return 'TODAY';
+      return 'Today';
   }
 }
