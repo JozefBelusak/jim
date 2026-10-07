@@ -1,6 +1,6 @@
 import { Session } from '@supabase/supabase-js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { consumeAuthCallbackError, initialAuthCallbackError, socialClient } from './client';
+import { consumeAuthCallbackError, consumeInitialRecoverySession, initialAuthCallbackError, socialClient } from './client';
 import { socialError } from './domain';
 import { socialRepository } from './repository';
 import { PublicProfile } from './types';
@@ -33,14 +33,15 @@ export function useSocialAccount() {
     const { data: subscription } = client.auth.onAuthStateChange((event, next) => {
       if (!alive) return;
       setSession(next); setError('');
+      const initialRecovery = consumeInitialRecoverySession(next?.access_token);
       if (event === 'SIGNED_IN') setCallbackError(null);
-      if (event === 'PASSWORD_RECOVERY') setRecovery(true);
+      if (event === 'PASSWORD_RECOVERY' || initialRecovery) setRecovery(true);
       if (event === 'SIGNED_OUT') { setProfile(null); setRecovery(false); }
     });
     client.auth.getSession().then(({ data, error: authError }) => {
       if (!alive) return;
       if (authError) { setError(socialError(authError)); setLoading(false); }
-      else { setSession(data.session); if (!data.session) setLoading(false); }
+      else { setSession(data.session); if (consumeInitialRecoverySession(data.session?.access_token)) setRecovery(true); if (!data.session) setLoading(false); }
     });
     return () => { alive = false; subscription.subscription.unsubscribe(); };
   }, [client, revision, setProfile]);

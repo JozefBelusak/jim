@@ -1,6 +1,7 @@
 import { SupabaseClient } from '@supabase/supabase-js';
-import { searchTerm, validateMessage, validateProfile } from './domain';
-import { ChatMessage, Database, ProfileInput } from './types';
+import { searchTerm, validateChatContent, validateMessage, validateProfile } from './domain';
+import { PHOTO_BUCKET, validatePhotoMetadata } from './photos';
+import { ChatMessage, Database, PhotoMetadata, PreparedPhoto, ProfileInput } from './types';
 
 export function socialRepository(client: SupabaseClient<Database>) {
   return {
@@ -38,6 +39,27 @@ export function socialRepository(client: SupabaseClient<Database>) {
     async send(chatId: string, body: string, clientId: string, accessToken: string) {
       const { data, error } = await client.rpc('send_direct_message', { chat_id: chatId, message_body: validateMessage(body), client_id: clientId }).setHeader('Authorization', `Bearer ${accessToken}`);
       if (error) throw error; if (!data[0]) throw new Error('Missing acknowledgement'); return data[0];
+    },
+    async reservePhoto(chatId: string, clientId: string, photo: PhotoMetadata, accessToken: string) {
+      validatePhotoMetadata(photo);
+      const { data, error } = await client.rpc('reserve_chat_photo', { chat_id: chatId, client_id: clientId, byte_size: photo.byteSize, width: photo.width, height: photo.height }).setHeader('Authorization', `Bearer ${accessToken}`);
+      if (error) throw error; if (!data[0]) throw new Error('Missing photo reservation'); return data[0].object_path;
+    },
+    async uploadPhoto(path: string, photo: PreparedPhoto, accessToken: string) {
+      validatePhotoMetadata(photo);
+      // Raw JPEG bytes avoid multipart/file handling differences in mobile Safari.
+      const bytes = await photo.blob.arrayBuffer();
+      const { error } = await client.storage.from(PHOTO_BUCKET).upload(path, bytes, { contentType: 'image/jpeg', upsert: false, headers: { Authorization: `Bearer ${accessToken}` } });
+      // A lost upload acknowledgement is safe to retry: reserved objects are immutable.
+      if (error && !('statusCode' in error && String(error.statusCode) === '409') && !/already exists|Duplicate/i.test(error.message)) throw error;
+    },
+    async sendPhoto(chatId: string, body: string, clientId: string, path: string, accessToken: string) {
+      const { data, error } = await client.rpc('send_direct_photo', { chat_id: chatId, message_body: validateChatContent(body, true), client_id: clientId, photo_path: path }).setHeader('Authorization', `Bearer ${accessToken}`);
+      if (error) throw error; if (!data[0]) throw new Error('Missing acknowledgement'); return data[0];
+    },
+    async downloadPhoto(path: string, signal: AbortSignal) {
+      const { data, error } = await client.storage.from(PHOTO_BUCKET).download(path, {}, { signal, cache: 'no-store' });
+      if (error) throw error; return data;
     },
     async read(chatId: string, messageId: string) {
       const { error } = await client.rpc('mark_direct_chat_read', { chat_id: chatId, message_id: messageId }); if (error) throw error;

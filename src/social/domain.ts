@@ -8,8 +8,11 @@ export function validateProfile(input: ProfileInput): ProfileInput {
   return result;
 }
 export function validateMessage(body: string): string {
+  return validateChatContent(body, false);
+}
+export function validateChatContent(body: string, hasPhoto: boolean): string {
   const value = body.trim();
-  if (!value || value.length > 2000) throw new Error('Správa musí mať 1–2000 znakov.');
+  if ((!value && !hasPhoto) || value.length > 2000) throw new Error('Správa musí mať 1–2000 znakov.');
   return value;
 }
 export function searchTerm(value: string) {
@@ -24,6 +27,10 @@ export function socialError(error: unknown): string {
   const message = error instanceof Error ? error.message : typeof error === 'object' && error !== null && 'message' in error ? String(error.message) : '';
   const code = typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';
   if (code === '23505') return 'Toto používateľské meno je už obsadené.';
+  if (/reserve_chat_photo|send_direct_photo/i.test(message) && (code === 'PGRST202' || /function/i.test(message))) return 'Posielanie fotiek ešte nie je aktivované na serveri. Treba spustiť migráciu pre fotky.';
+  if (/photo_missing/.test(message)) return 'Fotka ešte nie je nahraná. Skús odoslanie zopakovať.';
+  if (/photo_invalid/.test(message)) return 'Fotka sa nedá odoslať. Vyber ju znova.';
+  if (/photo_limit/.test(message)) return 'Máš príliš veľa rozpracovaných fotiek. Najprv odošli neodoslané správy.';
   if (/profile_required/.test(message)) return 'Najprv si vytvor profil.';
   if (/chat_unavailable/.test(message)) return 'S týmto profilom teraz nie je možné chatovať. Môže byť zablokovaný alebo už neexistuje.';
   if (/rate_limit|rate limit/i.test(message) || /rate_limit/.test(code)) return 'Odosielaš príliš rýchlo. Počkaj chvíľu a skús znova.';
@@ -31,7 +38,7 @@ export function socialError(error: unknown): string {
   if (/Email not confirmed/i.test(message)) return 'Najprv potvrď e-mail cez odkaz v správe.';
   if (/User already registered/i.test(message)) return 'Tento účet už existuje. Prihlás sa.';
   if (/Password should|weak password/i.test(message)) return 'Použi silnejšie heslo, aspoň 8 znakov.';
-  if (/^(Používateľské meno:|Meno musí|Bio môže|Správa musí)/.test(message)) return message;
+  if (/^(Používateľské meno:|Meno musí|Bio môže|Správa musí|Fotka |Vyber |Úložisko fotiek)/.test(message)) return message;
   return 'Nepodarilo sa spojiť so službou. Skontroluj pripojenie a skús znova.';
 }
 export function createMessageId(): string {

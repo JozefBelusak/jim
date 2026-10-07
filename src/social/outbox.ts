@@ -1,4 +1,5 @@
-import { validateMessage } from './domain';
+import { validateChatContent } from './domain';
+import { validatePhotoMetadata } from './photos';
 import { PendingMessage } from './types';
 
 export type OutboxStorage = {
@@ -10,7 +11,13 @@ export type OutboxStorage = {
 function parseMessage(raw: string): PendingMessage {
   const item: unknown = JSON.parse(raw);
   if (typeof item !== 'object' || item === null || !('clientId' in item) || typeof item.clientId !== 'string' || !('body' in item) || typeof item.body !== 'string' || !('createdAt' in item) || typeof item.createdAt !== 'string') throw new Error('Invalid outbox');
-  return { clientId: item.clientId, body: validateMessage(item.body), createdAt: item.createdAt };
+  let photo: PendingMessage['photo'];
+  if ('photo' in item && item.photo !== undefined) {
+    const value = item.photo;
+    if (typeof value !== 'object' || !value || !('width' in value) || typeof value.width !== 'number' || !('height' in value) || typeof value.height !== 'number' || !('byteSize' in value) || typeof value.byteSize !== 'number' || ('objectPath' in value && typeof value.objectPath !== 'string')) throw new Error('Invalid photo outbox');
+    photo = { width: value.width, height: value.height, byteSize: value.byteSize, ...('objectPath' in value ? { objectPath: String(value.objectPath) } : {}) }; validatePhotoMetadata(photo);
+  }
+  return { clientId: item.clientId, body: validateChatContent(item.body, Boolean(photo)), createdAt: item.createdAt, ...(photo ? { photo } : {}) };
 }
 export function createOutbox(userId: string, chatId: string, storage: OutboxStorage) {
   // One key per message: simultaneous tabs cannot overwrite each other's pending queue.

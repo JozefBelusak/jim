@@ -1,6 +1,5 @@
 import { PGlite } from '@electric-sql/pglite';
-import { readFileSync } from 'node:fs';
-import { URL } from 'node:url';
+import { asSocialUser, createSocialTestDatabase } from './testDatabase';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 const alice = '00000000-0000-4000-8000-000000000001';
@@ -8,22 +7,14 @@ const bob = '00000000-0000-4000-8000-000000000002';
 const stranger = '00000000-0000-4000-8000-000000000003';
 let db: PGlite;
 let chatId: string;
-async function asUser(id: string | null) {
-  await db.exec(`reset role; set role ${id ? 'authenticated' : 'anon'};`);
-  await db.query("select set_config('request.jwt.claim.sub',$1,false)", [id ?? '']);
-}
+const asUser = (id: string | null) => asSocialUser(db, id);
 async function send(body: string, nonce: string) {
   return db.query<{ id: string; sender_id: string; body: string }>('select * from public.send_direct_message($1,$2,$3)', [chatId, body, nonce]);
 }
 
 describe('actual PostgreSQL social permissions and chat RPCs', () => {
   beforeAll(async () => {
-    db = new PGlite();
-    await db.exec(`create role anon; create role authenticated; create schema auth;
-      create table auth.users(id uuid primary key, email text);
-      create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
-      grant usage on schema public,auth to anon,authenticated; grant execute on function auth.uid() to anon,authenticated;`);
-    await db.exec(readFileSync(new URL('../../supabase/migrations/202610070001_social.sql', import.meta.url), 'utf8'));
+    db = await createSocialTestDatabase();
     await db.query('insert into auth.users(id,email) values($1,$4),($2,$5),($3,$6)', [alice, bob, stranger, 'private@alice.test', 'private@bob.test', 'private@stranger.test']);
     for (const [id, name] of [[alice, 'alice'], [bob, 'bob'], [stranger, 'stranger']]) {
       await asUser(id);

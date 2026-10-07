@@ -1,6 +1,7 @@
 import { ReactNode, Ref, useEffect, useId, useRef } from 'react';
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, ScrollViewProps, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { colors } from '../theme/styles';
+import { useDialogFocus } from './useDialogFocus';
 
 type Props = {
   visible: boolean;
@@ -15,8 +16,6 @@ type Props = {
   onContentSizeChange?: ScrollViewProps['onContentSizeChange'];
 };
 
-const focusableSelector = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-
 export function BottomSheet({ visible, title, subtitle, onClose, children, footer, fullHeight, scrollRef, onScroll, onContentSizeChange }: Props) {
   const { height, width } = useWindowDimensions();
   const id = useId().replace(/:/g, '');
@@ -26,45 +25,7 @@ export function BottomSheet({ visible, title, subtitle, onClose, children, foote
   const closeRef = useRef(onClose);
 
   useEffect(() => { closeRef.current = onClose; }, [onClose]);
-
-  useEffect(() => {
-    if (!visible || Platform.OS !== 'web' || typeof document === 'undefined') return;
-    const previousFocus = document.activeElement;
-    const focusableElements = () => {
-      const sheet = document.getElementById(sheetId);
-      return sheet ? Array.from(sheet.querySelectorAll<HTMLElement>(focusableSelector))
-        .filter((element) => element.getClientRects().length > 0 && !element.matches(':disabled') && element.getAttribute('aria-disabled') !== 'true') : [];
-    };
-    const focusFirst = () => {
-      const first = focusableElements()[0];
-      if (first) first.focus();
-      else document.getElementById(sheetId)?.focus();
-    };
-    const focusTimer = setTimeout(focusFirst, 0);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Tab') return;
-      if (!document.getElementById(sheetId)?.closest('[role="dialog"]')) return;
-      const elements = focusableElements();
-      const first = elements[0];
-      const last = elements[elements.length - 1];
-      if (!first || !last) {
-        event.preventDefault();
-        document.getElementById(sheetId)?.focus();
-      } else if (event.shiftKey && (document.activeElement === first || !document.getElementById(sheetId)?.contains(document.activeElement))) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && (document.activeElement === last || !document.getElementById(sheetId)?.contains(document.activeElement))) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener('keydown', onKeyDown, true);
-    return () => {
-      clearTimeout(focusTimer);
-      document.removeEventListener('keydown', onKeyDown, true);
-      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
-    };
-  }, [visible, sheetId]);
+  useDialogFocus(sheetId, visible);
 
   if (!visible) return null;
 

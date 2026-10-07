@@ -4,7 +4,9 @@ import { createClient } from '@supabase/supabase-js';
 import { Platform } from 'react-native';
 import { fetchWithTimeout } from './network';
 import { Database } from './types';
-import { readAuthCallback } from './authCallback';
+import { readAuthCallback, recoverySessionMatcher } from './authCallback';
+
+export const consumeInitialRecoverySession = recoverySessionMatcher(typeof window === 'undefined' ? 'https://local.invalid/' : window.location.href);
 
 export function consumeAuthCallbackError() {
   if (typeof window === 'undefined') return null;

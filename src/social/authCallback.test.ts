@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { authCallbackMessage, readAuthCallback } from './authCallback';
+import { authCallbackMessage, readAuthCallback, recoverySessionMatcher } from './authCallback';
 import { socialError } from './domain';
 
 describe('auth callback errors', () => {
@@ -29,5 +29,15 @@ describe('auth callback errors', () => {
   });
   it('explains email rate limits returned as codes', () => {
     expect(socialError({ code: 'over_email_send_rate_limit', message: 'Email delivery delayed' })).toContain('Počkaj');
+  });
+  it('recovers a missed startup event only for the matching SDK session, once', () => {
+    const match = recoverySessionMatcher('https://app.test/#type=recovery&access_token=recovery-token&refresh_token=refresh');
+    expect(match()).toBe(false); expect(match('old-session')).toBe(false);
+    expect(match('recovery-token')).toBe(true); expect(match('recovery-token')).toBe(false);
+  });
+  it('does not infer recovery from a flag, a signup link or an invalid callback', () => {
+    for (const hash of ['type=recovery', 'type=signup&access_token=token&refresh_token=refresh', 'type=recovery&access_token=token', 'type=recovery&access_token=token&refresh_token=refresh&error=invalid']) {
+      expect(recoverySessionMatcher(`https://app.test/?recovery=1#${hash}`)('token')).toBe(false);
+    }
   });
 });

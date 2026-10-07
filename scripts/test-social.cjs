@@ -1,5 +1,5 @@
 // End-to-end UI + real PostgreSQL/RLS. Auth and network transports are test fixtures.
-const { chromium } = require('playwright');
+const { chromium, webkit } = require('playwright');
 const { PGlite } = require('@electric-sql/pglite');
 const { spawnSync } = require('node:child_process');
 const http = require('node:http');
@@ -35,6 +35,7 @@ let serial = Promise.resolve();
 const errors = [];
 const requests = [];
 const confirmations = [];
+const photoObjects = new Map();
 function runAs(id, action) {
   const result = serial.then(async () => {
     await db.exec(`reset role; set role ${id ? 'authenticated' : 'anon'};`);
@@ -54,7 +55,7 @@ function localFixture() {
   return { version: 6, savedAt: now, data: { schedule: {}, customExercises: [], machineMemories: [], onboardingCompleted: true, activeWorkout: null, templates: [], logs: [{id:'keep-history',userId:'local-user',dayId:'2026-10-07',date:'2026-10-07',name:'Keep my training',startedAt:now-3600000,finishedAt:now-1800000,durationSeconds:1800,volumeKg:400,entries:[{id:'keep-entry',exerciseId:'bench-press',metric:'weight_reps',sets:[{id:'keep-set',workoutExerciseId:'keep-entry',type:'normal',targetReps:8,reps:8,weightKg:50,done:true,createdAt:now-3600000,completedAt:now-1800000}]}]}] } };
 }
 async function transport(route, controls) {
-  const req = route.request(); const url = new URL(req.url()); const body = req.postDataJSON() ?? {};
+  const req = route.request(); const url = new URL(req.url()); const body = url.pathname.startsWith('/storage/') ? {} : req.postDataJSON() ?? {};
   const token = (req.headers().authorization ?? '').replace(/^Bearer /, ''); const userId = tokens.get(token);
   requests.push(`${req.method()} ${url.pathname}`);
   const reply = (data, status = 200) => route.fulfill({status, contentType:'application/json', body:JSON.stringify(data)});
@@ -86,10 +87,28 @@ async function transport(route, controls) {
       if (req.method() === 'PUT' && body.password) account.password = body.password;
       return reply(account.user);
     }
+    if (url.pathname.startsWith('/storage/v1/object/chat-photos/')) {
+      const objectPath = decodeURIComponent(url.pathname.slice('/storage/v1/object/chat-photos/'.length));
+      if (req.method() === 'POST') {
+        const mime = req.headers()['content-type'];
+        const file = new Blob([req.postDataBuffer()], {type:mime});
+        assert.equal(mime,'image/jpeg');
+        assert.ok(file.size>0,'Storage upload must contain actual JPEG bytes.');
+        await runAs(userId, () => db.query('insert into storage.objects(bucket_id,name,metadata) values($1,$2,$3)', ['chat-photos',objectPath,JSON.stringify({size:file.size,mimetype:file.type})]));
+        photoObjects.set(objectPath, Buffer.from(await file.arrayBuffer()));
+        if (controls.losePhotoUploadAck) { controls.losePhotoUploadAck=false; return route.abort('failed'); }
+        return reply({Key:`chat-photos/${objectPath}`,Id:crypto.randomUUID()});
+      }
+      const visible = await runAs(userId, async () => (await db.query('select name from storage.objects where bucket_id=$1 and name=$2',['chat-photos',objectPath])).rows);
+      if (!visible.length) return reply({message:'Object not found'},404);
+      return route.fulfill({status:200,contentType:'image/jpeg',body:photoObjects.get(objectPath)});
+    }
     if (url.pathname.startsWith('/rest/v1/rpc/')) {
       const rpc = url.pathname.split('/').pop();
-      if (rpc === 'send_direct_message' && controls.failBefore) { controls.failBefore = false; return route.abort('failed'); }
+      if ((rpc === 'send_direct_message' || rpc === 'send_direct_photo') && controls.failBefore) { controls.failBefore = false; return route.abort('failed'); }
       const result = await runAs(userId, async () => {
+        if (rpc === 'reserve_chat_photo') return (await db.query('select * from public.reserve_chat_photo($1,$2,$3,$4,$5)',[body.chat_id,body.client_id,body.byte_size,body.width,body.height])).rows;
+        if (rpc === 'send_direct_photo') return (await db.query('select * from public.send_direct_photo($1,$2,$3,$4)',[body.chat_id,body.message_body,body.client_id,body.photo_path])).rows;
         if (rpc === 'list_direct_chats') return (await db.query('select * from public.list_direct_chats()')).rows;
         if (rpc === 'start_direct_chat') return (await db.query('select public.start_direct_chat($1) as id',[body.other_user_id])).rows[0].id;
         if (rpc === 'send_direct_message') return (await db.query('select * from public.send_direct_message($1,$2,$3)',[body.chat_id,body.message_body,body.client_id])).rows;
@@ -97,7 +116,7 @@ async function transport(route, controls) {
         if (rpc === 'mark_direct_chat_read') { await db.query('select public.mark_direct_chat_read($1,$2)',[body.chat_id,body.message_id]); return null; }
         throw new Error(`Unexpected RPC ${rpc}`);
       });
-      if (rpc === 'send_direct_message' && controls.loseAck) { controls.loseAck = false; return route.abort('failed'); }
+      if ((rpc === 'send_direct_message' || rpc === 'send_direct_photo') && controls.loseAck) { controls.loseAck = false; return route.abort('failed'); }
       return reply(result);
     }
     if (url.pathname === '/rest/v1/social_profiles') {
@@ -121,6 +140,7 @@ async function transport(route, controls) {
     }
     throw new Error(`Unexpected test request ${url.pathname}`);
   } catch (error) {
+    if (url.pathname.startsWith('/storage/') && error.code==='23505') return reply({statusCode:'409',error:'Duplicate',message:'The resource already exists'},409);
     if (!error.code) errors.push(error.message);
     return reply({message:error.message,code:error.code??'test_error'},400);
   }
@@ -162,10 +182,15 @@ async function main() {
   await db.exec(`create role anon; create role authenticated; create schema auth; create table auth.users(id uuid primary key,email text);
     create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
     grant usage on schema public,auth to anon,authenticated; grant execute on function auth.uid() to anon,authenticated;`);
-  await db.exec(await fs.readFile(path.join(project,'supabase/migrations/202610070001_social.sql'),'utf8'));
+  await db.exec(`create schema storage;
+    create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+    create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text references storage.buckets(id),name text,metadata jsonb,unique(bucket_id,name));
+    alter table storage.objects enable row level security; grant usage on schema storage to anon,authenticated;
+    grant select,insert,update,delete on storage.objects to authenticated;`);
+  for (const name of ['202610070001_social.sql','202610070002_chat_photos.sql']) await db.exec(await fs.readFile(path.join(project,'supabase/migrations',name),'utf8'));
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
   const address = `http://127.0.0.1:${server.address().port}`;
-  const browser = await chromium.launch({channel:process.env.UX_BROWSER_CHANNEL||'chrome',headless:true});
+  const browser = process.argv.includes('--webkit') ? await webkit.launch({headless:true}) : await chromium.launch({channel:process.env.UX_BROWSER_CHANNEL||'chrome',headless:true});
   let current;
   try {
     for (const width of [320,390,720]) {
@@ -219,6 +244,68 @@ async function main() {
       });
       await alicePage.getByRole('dialog').getByText('Správa po výpadku',{exact:true}).waitFor();
       assert.equal(await alicePage.getByRole('dialog').getByText('Správa po výpadku',{exact:true}).count(),1);
+      // Actual browser file selection, conversion, durable IndexedDB blob and
+      // authenticated Storage requests with the same SQL/RLS as production.
+      const png = Buffer.from(await alicePage.evaluate(() => {
+        const canvas=document.createElement('canvas'); canvas.width=3000; canvas.height=2000;
+        const context=canvas.getContext('2d'); context.fillStyle='#340055'; context.fillRect(0,0,3000,2000);
+        return canvas.toDataURL('image/png').split(',')[1];
+      }),'base64');
+      async function choosePhoto() {
+        const chooser = alicePage.waitForEvent('filechooser');
+        await alicePage.getByRole('button',{name:'Pridať fotku',exact:true}).click();
+        await (await chooser).setFiles({name:'test-photo.png',mimeType:'image/png',buffer:png});
+        await alicePage.getByRole('button',{name:'Odobrať fotku',exact:true}).waitFor();
+        await alicePage.getByRole('dialog').getByRole('button',{name:'Otvoriť fotku',exact:true}).waitFor();
+        await alicePage.getByText('Pripravujem fotku…',{exact:true}).waitFor({state:'hidden'});
+      }
+      await choosePhoto();
+      const invalidChooser=alicePage.waitForEvent('filechooser');
+      await alicePage.getByRole('button',{name:'Vybrať inú fotku',exact:true}).click();
+      await (await invalidChooser).setFiles({name:'broken.jpg',mimeType:'image/jpeg',buffer:Buffer.from('not an image')});
+      const invalidPhoto=alicePage.getByText('Fotka sa nedá otvoriť v tomto prehliadači. Skús JPEG alebo PNG.',{exact:true});
+      await invalidPhoto.waitFor();
+      await alicePage.waitForResponse(response => response.url().endsWith('/rpc/get_direct_messages'));
+      assert.ok(await invalidPhoto.isVisible(),'Background message refresh must preserve a photo error.');
+      await alicePage.getByRole('button',{name:'Odobrať fotku',exact:true}).waitFor();
+      await noOverflow(alicePage);
+      const sendWithPreview = await alicePage.getByRole('button',{name:'Odoslať správu',exact:true}).boundingBox();
+      assert.ok(sendWithPreview.y+sendWithPreview.height<=844,'Photo preview must leave send accessible.');
+      await alicePage.getByRole('button',{name:'Odobrať fotku',exact:true}).click();
+      await alicePage.getByRole('button',{name:'Odobrať fotku',exact:true}).waitFor({state:'hidden'});
+      await choosePhoto();
+      controls.losePhotoUploadAck=true;
+      await alicePage.getByRole('button',{name:'Odoslať správu',exact:true}).click();
+      await alicePage.getByRole('button',{name:'Zopakovať správu: Fotka',exact:true}).waitFor();
+      await alicePage.reload();
+      await alicePage.getByText('Profile',{exact:true}).click();
+      await alicePage.getByRole('button',{name:new RegExp(`Chat s Bob ${width}`)}).click();
+      await alicePage.getByRole('button',{name:'Zopakovať správu: Fotka',exact:true}).waitFor();
+      controls.loseAck=true;
+      await alicePage.getByRole('button',{name:'Zopakovať správu: Fotka',exact:true}).click();
+      const photoRetry=alicePage.getByRole('button',{name:'Zopakovať správu: Fotka',exact:true});
+      if (await photoRetry.isVisible()) await photoRetry.click();
+      await photoRetry.waitFor({state:'hidden'});
+      await bobPage.getByRole('dialog').getByRole('button',{name:'Otvoriť fotku',exact:true}).waitFor();
+      await alicePage.getByRole('dialog').getByRole('button',{name:'Otvoriť fotku',exact:true}).waitFor();
+      await alicePage.waitForFunction(() => {
+        const dialog=document.querySelector('[role="dialog"]');
+        return dialog && !dialog.textContent.includes('Neodoslané · Zopakovať') && !dialog.textContent.includes('Odosielam…');
+      });
+      await runAs(users.get(`alice${width}@fixture.test`).user.id,async () => {
+        const photos=(await db.query('select * from public.chat_messages where photo_path is not null')).rows;
+        assert.equal(photos.length,1,'Lost upload/message acknowledgement must not duplicate photos.');
+        assert.equal(photos[0].photo_width,1600); assert.equal(photos[0].photo_height,1067);
+      });
+      await bobPage.getByRole('dialog').getByRole('button',{name:'Otvoriť fotku',exact:true}).click();
+      await bobPage.getByRole('button',{name:'Zavrieť fotku',exact:true}).waitFor();
+      await bobPage.waitForFunction(() => document.activeElement.getAttribute('aria-label')==='Zavrieť fotku');
+      await bobPage.keyboard.press('Tab');
+      assert.ok(await bobPage.evaluate(() => document.activeElement.closest('[role="dialog"]')?.textContent.includes('Zavrieť fotku')),'Focus stays in the photo viewer.');
+      await bobPage.getByRole('button',{name:'Zavrieť fotku',exact:true}).click();
+      await bobPage.getByRole('button',{name:'Zavrieť fotku',exact:true}).waitFor({state:'hidden'});
+      await noOverflow(alicePage);
+      await alicePage.screenshot({path:path.join(artifacts,`photo-chat-${width}.png`),animations:'disabled'});
       const input = await alicePage.getByLabel('Správa',{exact:true}).boundingBox();
       assert.ok(input.y+input.height <= 844,'Composer must be visible without scrolling.');
       await noOverflow(alicePage);
@@ -300,6 +387,7 @@ async function main() {
         await alicePage.getByRole('dialog').waitFor({state:'hidden'});
         assert.equal(users.get(`alice${width}@fixture.test`).password,'New-Password123');
         await alicePage.getByRole('button',{name:'Odhlásiť sa',exact:true}).click();
+        await alicePage.getByRole('button',{name:'Vytvoriť účet / prihlásiť sa',exact:true}).waitFor();
       }
       await alicePage.goto(`${address}/?profile=bob_${width}`);
       await alicePage.getByRole('button',{name:'Prihlásiť sa a napísať',exact:true}).waitFor();
@@ -310,7 +398,11 @@ async function main() {
     }
     assert.deepEqual(errors,[],'Browser or transport errors');
   } catch (error) {
-    if (current && !current.isClosed()) { await current.screenshot({path:path.join(artifacts,'failure.png')}); await fs.writeFile(path.join(artifacts,'failure.html'),await current.content()); }
+    console.error('Photo requests:',requests.filter(request => /chat-photos|reserve_chat_photo|send_direct_photo/.test(request)));
+    await runAs(null,async () => { await db.exec('reset role'); console.error('Photo metadata:',(await db.query('select byte_size,object_path from public.chat_photos')).rows,(await db.query('select name,metadata from storage.objects')).rows); });
+    if (current && !current.isClosed()) {
+      await Promise.allSettled([current.screenshot({path:path.join(artifacts,'failure.png')}),current.content().then(content => fs.writeFile(path.join(artifacts,'failure.html'),content))]);
+    }
     console.error('Recent test requests:',requests.slice(-20)); throw error;
   } finally { await browser.close(); await new Promise(resolve => server.close(resolve)); await db.close(); }
 }

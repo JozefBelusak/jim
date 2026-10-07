@@ -10,6 +10,8 @@ existujúce tréningy, plány, zálohy alebo ich `local-user` identitu.
 1. Vytvor Supabase projekt alebo použi existujúci. V jeho SQL Editore spusti raz
    celý súbor `supabase/migrations/202610070001_social.sql`. Pri správe migrácií cez
    Supabase CLI ho aplikuj ako bežnú migráciu. Je transakčný a nemení tréningové dáta.
+   Pre fotky potom spusti aj `supabase/migrations/202610070002_chat_photos.sql`.
+   Ak prvá migrácia už prešla, spusti iba tento nový súbor; pôvodnú neopakuj.
 2. V **Authentication → URL Configuration** nastav **Site URL** na adresu svojho
    Netlify webu. Do povolených **Redirect URLs** pridaj tú istú adresu s `?account=1`
    a lokálnu adresu pre vývoj, napr. `http://localhost:8081/?account=1`.
@@ -41,6 +43,9 @@ z adresy. Existujúce prihlásenie zostáva zachované. Bez prihlásenia ponúkn
 „Prihlásiť sa“ alebo „Poslať nové potvrdenie e-mailu“. Opätovné potvrdenie je dostupné
 aj z registračného a prihlasovacieho formulára. Pri obnove hesla použi „Zabudnuté heslo“.
 Odoslanie môže Supabase obmedziť; appka zobrazí chybu a dovolí skúsiť ho neskôr.
+Formulár obnovy sa otvorí aj pri rýchlej inicializácii SDK, ktorá predbehne
+React listener. Appka pritom overí zhodu návratového tokenu so session vrátenou SDK;
+samotný `?recovery=1` ani stará session formulár neaktivujú.
 
 Pre tento web je Site URL `https://gymratturbo.netlify.app` a povolený redirect
 `https://gymratturbo.netlify.app/?account=1`. Kvôli `otp_expired` znovu nespúšťaj
@@ -53,7 +58,8 @@ pri prvom otvorení, skontroluj e-mailové prefetching/tracking nastavenia podľ
 - Verejný profil obsahuje @meno, meno, bio a čas vytvorenia. E-mail sa nepublikuje.
   Odkaz `/?profile=meno` otvorí profil aj hosťovi. Premenovaním @mena sa zmení odkaz.
 - Na chat treba prihlásenie a vlastný profil. Konverzácia medzi dvojicou je jediná,
-  aj keď ju naraz založia obaja. Žiadne skupiny ani prílohy zatiaľ nie sú implementované.
+  aj keď ju naraz založia obaja. Podporuje text a jednu fotku na správu s voliteľným
+  popisom. Skupiny, videá a ostatné prílohy zatiaľ nie sú implementované.
 - Správy sú súkromné cez databázové oprávnenia/RLS; nejde o end-to-end šifrovanie.
   Prevádzkovateľ databázy má administrátorský prístup.
 - Odosielateľa a čas určuje server. Pri opakovaní správy sa použije rovnaké `client_id`;
@@ -72,6 +78,46 @@ pri prvom otvorení, skontroluj e-mailové prefetching/tracking nastavenia podľ
 - Privilegované SQL funkcie sú v neexponovanej schéme `private`, majú pevný prázdny
   `search_path` a kontrolujú `auth.uid()`. Prehliadač nemôže priamo zapisovať do správ.
   Schému `private` nepridávaj medzi exposed schemas API.
+
+## Fotky v chate
+
+V Supabase SQL Editore spusti celý nový súbor `202610070002_chat_photos.sql`.
+Vytvorí súkromný bucket `chat-photos`, tabuľku rezervácií, Storage RLS a RPC.
+Bucket nemusíš vytvárať ručne a nesmie byť verejný. Prihlásenie, účty, pôvodné
+správy a prvá migrácia sa nemenia. Po commite/pushi nechaj Netlify nasadiť nový
+build a otvor appku znovu online.
+
+V chate použi **Pridať fotku**, skontroluj náhľad, prípadne napíš popis a stlač
+**Odoslať**. Pred odoslaním ju môžeš odobrať alebo nahradiť. Kliknutie na fotku
+v správe otvorí väčší náhľad. Výber funguje vo web appke aj v PWA na telefóne.
+
+- JPEG, PNG a WebP sa prekodujú na JPEG, najviac 1600 px na dlhšej strane.
+  HEIC/HEIF funguje, ak ho daný prehliadač vie dekódovať; inak appka požiada o JPEG/PNG.
+  Originál môže mať najviac 25 MB, výsledok najviac 5 MiB. Canvas export
+  neprenesie pôvodné EXIF/GPS údaje. Fotka zostáva v pôvodnom pomere strán.
+- Potvrdené fotky čítajú cez autentifikované Storage API účastníci konkrétneho
+  chatu. Appka nevytvára verejné ani zdieľateľné podpísané odkazy; náhľad používa
+  dočasný lokálny Blob URL, ktorý zruší po zatvorení komponentu. Administrátor
+  projektu má prístup k úložisku; fotky nie sú end-to-end šifrované.
+- Pred odoslaním sa pripravené bajty uložia do IndexedDB oddelene podľa účtu,
+  chatu a nonce ako ArrayBuffer kvôli kompatibilite Safari/WebKit. Aj upload
+  prenáša priamo JPEG bajty. Outbox obsahuje iba metadáta. Reload zachová neodoslanú fotku;
+  **Neodoslané · Zopakovať** dokončí upload a správu s rovnakou identitou.
+  Obe operácie tolerujú stratenú odpoveď bez prepísania fotky či duplikovania správy.
+- Server povoľuje upload len do rezervovanej cesty vlastníka, publikovanie iba
+  po existujúcom JPEG uploade a fotku nemožno použiť s iným účtom, chatom alebo nonce.
+  Nahrané objekty sú nemenné. Blokovanie zastaví nové rezervácie/uploady/správy,
+  staršia história zostáva prístupná. Fotky zdieľajú limit 30 správ za minútu s textom.
+- Najviac 20 nepublikovaných rezervácií na účet obmedzuje nedokončené uploady.
+  Správca služby musí prípadné trvalo opustené uploady čistiť cez Storage API;
+  automatická úloha na ich čistenie nie je súčasťou tejto implementácie.
+- Tréningový JSON export neobsahuje chat ani fotky. Lokálne bajty neodoslanej
+  fotky sa vymažú po potvrdení správy serverom; odhlásenie ich zachová pre daný účet.
+
+Overenie: `npm run test:social`, prípadne `npm run test:social -- --webkit`
+po `npx playwright install webkit`. Test používa reálne dekódovanie/prekódovanie,
+IndexedDB a Supabase SDK s testovacím Auth/Storage transportom a skutočným PostgreSQL/RLS.
+Nie je to overenie produkčného Supabase Storage ani fyzických telefónov.
 
 ## Overenie
 
@@ -95,4 +141,5 @@ JSON tréningovej zálohy neobsahuje účet ani správy zo servera.
 Oficiálne podklady: [Supabase Auth pre React Native](https://supabase.com/docs/guides/auth/quickstarts/react-native),
 [RLS](https://supabase.com/docs/guides/database/postgres/row-level-security),
 [Postgres Changes](https://supabase.com/docs/guides/realtime/postgres-changes),
+[Storage RLS](https://supabase.com/docs/guides/storage/security/access-control),
 [SMTP](https://supabase.com/docs/guides/auth/auth-smtp).

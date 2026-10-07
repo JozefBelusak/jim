@@ -5,6 +5,46 @@ Pri ďalšej úprave zaznamenať výsledné správanie, overenie a stav súvisia
 Zachovať existujúce tréningy, históriu a plány. Nepovažovať bod za hotový len preto,
 že existuje jeho tlačidlo; rozhoduje celý používateľský tok.
 
+## 2026-10-07 — fotky v súkromnom chate
+
+- Viditeľné „Pridať fotku“, náhľad, odobratie/nahradenie a odoslanie jednej fotky
+  s voliteľným popisom. Prijatú aj rozpracovanú fotku možno otvoriť vo väčšom náhľade.
+- JPEG/PNG/WebP a prehliadačom podporované HEIC/HEIF sa zmenšia na najviac
+  1600 px a prekodujú na JPEG bez pôvodných EXIF/GPS údajov. Limit originálu
+  je 25 MB a výsledku 5 MiB; neplatná fotka zobrazí chybu a zachová pôvodný výber.
+- Súkromný Storage bucket, rezervované nemenné cesty a autentifikované čítanie
+  iba pre účastníkov chatu. Žiadne verejné alebo podpísané URL v správach.
+  Foto RPC a text používajú spoločnú autorizáciu, nonce a limit 30 správ/minútu.
+- Bajty rozpracovanej fotky sa ukladajú do IndexedDB, metadáta do existujúceho
+  outboxu podľa účtu a chatu. Retry po reloade a strate odpovede pri uploade alebo
+  odoslaní nevytvára druhú fotku/správu. IndexedDB používa prenositeľný ArrayBuffer.
+- Chybu prípravy/odoslania už nevymaže automatické načítanie chatu. Potvrdenie
+  správy odstráni jej pending stav aj lokálne bajty. Prehľad chatov zobrazuje „Fotka“.
+- Nová migrácia `202610070002_chat_photos.sql` sa spúšťa po pôvodnej social
+  migrácii. Zachováva existujúce profily, účty aj textové správy. Prihlásenie,
+  Auth nastavenia, env premenné a formát tréningovej zálohy sa nemenia.
+- Rozšírený WebKit test odhalil zmeškanú udalosť obnovy hesla pri rýchlej
+  inicializácii SDK. Návrat teraz otvorí formulár aj v tomto prípade, iba ak
+  SDK vráti session s tokenom z platného recovery návratu; samotný URL flag nestačí.
+- Náhľad fotky aj existujúce panely zdieľajú obsluhu klávesnice: focus zostáva
+  vo vrchnom dialógu a po zavretí sa vráti na pôvodný ovládací prvok.
+- Testy pokrývajú súkromie, spoofing, blokovanie, nemennosť, upload pred publikovaním,
+  idempotenciu, spoločný rate limit, prechod zo starej databázy a obnovu lokálnych bajtov.
+- Overenie: TypeScript, ESLint, 183 unit/databázových testov v 22 súboroch,
+  Chrome aj desktopový WebKit na 320/390/720 px. Prehliadače overili výber,
+  kompresiu, chybnú náhradu, náhľad, focus, retry po reloade a strate upload/message
+  odpovede, prijatie na druhom účte aj obnovu hesla. K tomu produkčný web build.
+- Súbory: `src/social/{ChatSheet.tsx,ChatPhoto.tsx,photos.ts,outbox.ts,repository.ts,
+  domain.ts,types.ts,photos.test.ts,photoDatabase.test.ts,testDatabase.ts,
+  database.test.ts,repository.test.ts,authCallback.ts,authCallback.test.ts,
+  client.ts,useSocialAccount.ts}`, `src/components/{BottomSheet.tsx,useDialogFocus.ts}`,
+  `supabase/migrations/202610070002_chat_photos.sql`, `scripts/test-social.cjs`,
+  `docs/social.md`, `CHANGELOG.md`.
+- Produkčná aktivácia vyžaduje spustenie novej migrácie v Supabase a deploy kódu.
+  SQL/RLS testy používajú PostgreSQL/PGlite; Auth/Storage HTTP je testovací transport.
+  Živý Supabase Storage a fyzický iPhone neboli dostupné na overenie. Trvalo opustené
+  uploady zatiaľ čistí správca cez Storage API; server má limit 20 nedokončených rezervácií.
+
 ## 2026-10-07 — iPhone rozloženie a presná primárna farba
 
 - Opravené dvojité bezpečné odstupy: HTML aj React Native Web `SafeAreaView`
